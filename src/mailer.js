@@ -1,78 +1,43 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 const NOTIFY_TO = 'matt.sacks@invokeinc.com';
 
-let transporter = null;
+let client = null;
 
-function getTransporter() {
-  if (transporter) return transporter;
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    console.log('[mailer] SMTP not configured — missing env vars:', { SMTP_HOST: !!SMTP_HOST, SMTP_USER: !!SMTP_USER, SMTP_PASS: !!SMTP_PASS });
+function getClient() {
+  if (client) return client;
+  if (!process.env.RESEND_API_KEY) {
+    console.log('[mailer] RESEND_API_KEY not set — notifications disabled');
     return null;
   }
-
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: parseInt(SMTP_PORT || '587'),
-    secure: parseInt(SMTP_PORT || '587') === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-    connectionTimeout: 10000,
-    socketTimeout: 10000,
-    tls: { rejectUnauthorized: false },
-  });
-  return transporter;
+  client = new Resend(process.env.RESEND_API_KEY);
+  return client;
 }
 
 async function sendUsageNotification({ moduleData, filename, fileSize, ip, userAgent }) {
-  const t = getTransporter();
-  if (!t) return;
+  const c = getClient();
+  if (!c) return;
 
   const m = moduleData.metadata;
   const s = moduleData.statistics;
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
 
-  const text = [
-    'Module PDF Generator — Usage Notification',
-    '==========================================',
-    '',
-    'Time:        ' + now + ' ET',
-    'File:        ' + filename + ' (' + (fileSize / 1024).toFixed(1) + ' KB)',
-    'IP Address:  ' + (ip || 'unknown'),
-    'User Agent:  ' + (userAgent || 'unknown'),
-    '',
-    'Module Details',
-    '--------------',
-    'Name:        ' + m.name,
-    'Code:        ' + (m.moduleCode || '—'),
-    'Prefix:      ' + (m.prefix || '—'),
-    'Category:    ' + (m.category || '—'),
-    'Workflow:    ' + (m.workflowFlag ? 'Yes' : 'No'),
-    'Version:     ' + (m.version || '—'),
-    '',
-    'Statistics',
-    '----------',
-    'Fields:      ' + s.totalFields,
-    'Levels:      ' + s.totalLevels,
-    'Regions:     ' + s.totalRegions,
-    'Rules:       ' + s.totalRules,
-    'Roles:       ' + s.totalRoles,
-    'WF Stages:   ' + (s.totalWorkflowSegments || 0),
-    'WF Tasks:    ' + s.totalWorkflowTasks,
-  ].join('\n');
+  console.log('[mailer] Sending notification for module:', m.name);
 
   const html = buildHtml({ m, s, filename, fileSize, ip, userAgent, now });
 
-  console.log('[mailer] Sending notification for module:', m.name);
   try {
-    await t.sendMail({
-      from: '"Module PDF Generator" <' + process.env.SMTP_USER + '>',
+    const { error } = await c.emails.send({
+      from: 'Module PDF Generator <onboarding@resend.dev>',
       to: NOTIFY_TO,
       subject: 'New module processed: ' + m.name + (m.prefix ? ' (' + m.prefix + ')' : ''),
-      text,
       html,
     });
-    console.log('[mailer] Notification sent to', NOTIFY_TO);
+    if (error) {
+      console.error('[mailer] Failed to send notification:', error.message || JSON.stringify(error));
+    } else {
+      console.log('[mailer] Notification sent to', NOTIFY_TO);
+    }
   } catch (err) {
     console.error('[mailer] Failed to send notification:', err.message);
   }
