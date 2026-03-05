@@ -36,7 +36,12 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000);
 
-app.post('/upload', upload.single('module'), async (req, res) => {
+app.post('/upload', (req, res, next) => {
+  upload.single('module')(req, res, err => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded.' });
   }
