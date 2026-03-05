@@ -22,7 +22,8 @@ const THEME = {
 };
 
 const DOC_TYPES = [
-  { id: 'overview',         title: 'Module Overview',      description: 'Module summary, properties, and key statistics' },
+  { id: 'overview',         title: 'Module Overview',       description: 'Module summary, properties, and key statistics' },
+  { id: 'description',      title: 'Module Description',    description: 'Natural language overview of what the module does and how it is set up' },
   { id: 'data-dictionary',  title: 'Data Dictionary',       description: 'Complete field reference with types and properties' },
   { id: 'workflow',         title: 'Workflow Guide',         description: 'Tasks, assignments, and process flows' },
   { id: 'rules',            title: 'Rules & Behaviors',     description: 'DXL rules and field behavior configurations' },
@@ -86,6 +87,7 @@ function buildDocument(doc, data) {
   let bodyContent;
   switch (doc.id) {
     case 'overview':        bodyContent = buildOverview(data); break;
+    case 'description':     bodyContent = buildDescription(data); break;
     case 'data-dictionary': bodyContent = buildDataDictionary(data); break;
     case 'workflow':        bodyContent = buildWorkflow(data); break;
     case 'rules':           bodyContent = buildRules(data); break;
@@ -244,6 +246,333 @@ function buildOverview(data) {
   }
 
   return parts.join('');
+}
+
+function buildDescription(data) {
+  const { metadata: m, fields, workflow, roles, rules, regions, levels, statistics: s } = data;
+  const parts = [];
+
+  // At-a-glance stats strip
+  parts.push(`
+<div class="desc-strip">
+  ${descStat(s.totalFields, 'Fields')}
+  ${descStat(s.totalLevels, 'Data Levels')}
+  ${descStat(s.totalWorkflowSegments || workflow.segments.length, 'Workflow Stages')}
+  ${descStat(s.totalWorkflowTasks, 'Workflow Tasks')}
+  ${descStat(s.totalRoles, 'Roles')}
+  ${descStat(s.totalRules, 'Rules')}
+  ${descStat(s.totalRegions, 'Screen Regions')}
+</div>`);
+
+  parts.push(descSection('What This Module Does', descIntro(data)));
+  parts.push(descSection('How Data Is Organized', descDataStructure(data)));
+  if (workflow.segments.length > 0) parts.push(descSection('How the Workflow Operates', descWorkflow(data)));
+  if (rules.length > 0) parts.push(descSection('Business Rules & Automated Behaviors', descRules(data)));
+  if (roles.length > 0) parts.push(descSection('Who Uses This Module', descRoles(data)));
+  parts.push(descSection('Notable Fields & Data Points', descKeyFields(data)));
+
+  return parts.join('');
+}
+
+// ─── Description narrative helpers ───────────────────────────────────────────
+
+function descSection(title, content) {
+  return `<div class="desc-section"><h2 class="desc-section-title">${esc(title)}</h2><div class="desc-body">${content}</div></div>`;
+}
+
+function descStat(num, label) {
+  return `<div class="desc-stat"><span class="desc-stat-num">${num}</span><span class="desc-stat-label">${esc(label)}</span></div>`;
+}
+
+function descCallout(text) {
+  return `<div class="desc-callout">${text}</div>`;
+}
+
+function descIntro(data) {
+  const { metadata: m, statistics: s } = data;
+  let html = '';
+
+  const categoryDesc = m.category ? ` in the <strong>${esc(m.category)}</strong> category` : '';
+  const prefixDesc = m.prefix
+    ? ` Records are uniquely identified using the prefix <strong>${esc(m.prefix)}</strong> (e.g., <em>${esc(m.prefix)}-001</em>).`
+    : '';
+
+  const wfDesc = m.workflowFlag
+    ? 'It is a <strong>workflow-enabled</strong> module, meaning each record moves through a defined sequence of stages and tasks — routing work to the right people for review, action, and approval before the record is considered complete.'
+    : 'It operates as a <strong>non-workflow data module</strong>, providing a structured way to create, store, and manage records without a formal routing or approval process.';
+
+  html += `<p>The <strong>${esc(m.name)}</strong> module${categoryDesc} is a structured data management solution built on the DevonWay platform.${prefixDesc}</p>`;
+  html += `<p>${wfDesc}</p>`;
+
+  const highlights = [];
+  if (s.totalFields > 0) highlights.push(`<strong>${s.totalFields} data fields</strong> spread across ${s.totalLevels} level${s.totalLevels !== 1 ? 's' : ''}`);
+  if (s.identifyingFields > 0) highlights.push(`<strong>${s.identifyingFields} identifying field${s.identifyingFields !== 1 ? 's' : ''}</strong> that label records in lists and search results`);
+  if (s.requiredFields > 0) highlights.push(`<strong>${s.requiredFields} conditionally required field${s.requiredFields !== 1 ? 's' : ''}</strong> enforced by business rules`);
+  if (s.trackedFields > 0) highlights.push(`<strong>${s.trackedFields} history-tracked field${s.trackedFields !== 1 ? 's' : ''}</strong> for full audit trail coverage`);
+  if (s.referenceFields > 0) highlights.push(`<strong>${s.referenceFields} reference field${s.referenceFields !== 1 ? 's' : ''}</strong> linking records to other modules`);
+
+  if (highlights.length > 0) {
+    html += `<p>At a glance, the module includes ${highlights.join('; ')}.</p>`;
+  }
+
+  if (m.version) {
+    html += `<p class="desc-muted">Module version: <strong>${esc(m.version)}</strong></p>`;
+  }
+
+  return html;
+}
+
+function descDataStructure(data) {
+  const { fields, levels, regions, statistics: s } = data;
+  let html = '';
+
+  // Levels
+  const headerLevel = levels.find(l => l.isHeader || l.code === 'H');
+  const childLevels = levels.filter(l => !l.isHeader && l.code !== 'H');
+
+  if (levels.length === 0) {
+    html += `<p>The module captures all data at a single level.</p>`;
+  } else if (childLevels.length === 0) {
+    const hCount = fields.filter(f => f.level === 'H' || f.isHeader).length;
+    html += `<p>All <strong>${hCount}</strong> fields are captured at the <strong>header level</strong>${headerLevel?.name && headerLevel.name !== 'H' ? ` (${esc(headerLevel.name)})` : ''}, meaning each record holds a single set of values — there are no repeating rows or child grids.</p>`;
+  } else {
+    const hCount = fields.filter(f => f.level === 'H' || f.isHeader).length;
+    html += `<p>The module uses a <strong>multi-level data structure</strong>: a header level holds the primary record data (${hCount} fields), and ${childLevels.length} child level${childLevels.length !== 1 ? 's allow' : ' allows'} repeating rows of related information within the same record:</p>`;
+    html += `<ul class="desc-list">`;
+    for (const cl of childLevels) {
+      const cCount = fields.filter(f => f.level === cl.code).length;
+      html += `<li><strong>${esc(cl.name || cl.code)}</strong> — ${cCount} field${cCount !== 1 ? 's' : ''} per row</li>`;
+    }
+    html += `</ul>`;
+  }
+
+  // Field type breakdown in prose
+  const typeMap = s.fieldsByType || {};
+  const FRIENDLY = {
+    CS: 'short text', CL: 'long text / paragraph', N: 'numeric', D: 'date', T: 'time',
+    CB: 'checkbox', P: 'picklist (single-select)', R: 'reference (link to another module)',
+    VC: 'calculated text', VN: 'calculated numeric', VD: 'calculated date',
+    VP: 'calculated picklist', VR: 'calculated reference', VH: 'calculated HTML',
+    CR: 'chart / report', GF: 'graphic', BU: 'button',
+  };
+  const typeSentences = Object.entries(typeMap)
+    .sort((a, b) => b[1] - a[1])
+    .filter(([, n]) => n > 0)
+    .map(([code, n]) => `<strong>${n}</strong> ${FRIENDLY[code] || code} field${n !== 1 ? 's' : ''}`);
+
+  if (typeSentences.length > 0) {
+    html += `<p>Field types include: ${typeSentences.join(', ')}.</p>`;
+  }
+
+  // Regions
+  const headerRegions = regions.filter(r => r.level === 'H' || !r.level);
+  const childRegions  = regions.filter(r => r.level && r.level !== 'H');
+
+  if (regions.length > 0) {
+    html += `<p>The form is organized into <strong>${regions.length} screen region${regions.length !== 1 ? 's' : ''}</strong>`;
+    if (headerRegions.length > 0) {
+      const names = headerRegions.slice(0, 6).map(r => `<em>${esc(r.name || r.code)}</em>`).join(', ');
+      const more = headerRegions.length > 6 ? ` and ${headerRegions.length - 6} more` : '';
+      html += ` — the header form sections include ${names}${more}`;
+    }
+    if (childRegions.length > 0) {
+      html += `; ${childRegions.length} region${childRegions.length !== 1 ? 's are' : ' is'} used within child levels`;
+    }
+    html += `.</p>`;
+  }
+
+  // Picklist fields callout
+  const plFields = fields.filter(f => f.picklist && f.picklist.length > 0);
+  if (plFields.length > 0) {
+    const examples = plFields.slice(0, 4).map(f => {
+      const vals = f.picklist.slice(0, 4).map(v => esc(v.label || v.value)).join(', ');
+      const more = f.picklist.length > 4 ? ` +${f.picklist.length - 4} more` : '';
+      return `<strong>${esc(f.prompt || f.subCode)}</strong>: ${vals}${more}`;
+    }).join('<br>');
+    html += descCallout(`<strong>${plFields.length} field${plFields.length !== 1 ? 's' : ''} use predefined value lists</strong> (picklists), ensuring consistent data entry. Examples:<br><br>${examples}`);
+  }
+
+  return html;
+}
+
+function descWorkflow(data) {
+  const { workflow, roles } = data;
+  const { segments } = workflow;
+  let html = '';
+
+  const totalTasks = segments.reduce((n, s) => n + s.events.length, 0);
+
+  // Opening paragraph
+  html += `<p>The module routes records through <strong>${segments.length} stage${segments.length !== 1 ? 's' : ''}</strong> with a total of <strong>${totalTasks} task${totalTasks !== 1 ? 's' : ''}</strong>. Each stage represents a phase of the process, and the tasks within each stage define the specific actions that must be completed before the record can advance.</p>`;
+
+  // Visual stage flow
+  const flowItems = segments.map((s, i) =>
+    `<div class="desc-flow-step">${esc(s.name || s.code)}</div>${i < segments.length - 1 ? '<div class="desc-flow-arrow">→</div>' : ''}`
+  ).join('');
+  html += `<div class="desc-flow">${flowItems}</div>`;
+
+  // Stage-by-stage prose
+  for (const [i, seg] of segments.entries()) {
+    const events = seg.events || [];
+    const taskNames = events.map(e => `<em>${esc(e.name || e.code)}</em>`);
+    const taskOrder = seg.taskOrder === 'P' ? 'in parallel' : 'sequentially';
+
+    let stageDesc = `<strong>${esc(seg.name || seg.code)}</strong> `;
+    if (events.length === 0) {
+      stageDesc += `is a stage with no explicitly defined tasks — actions may be driven by workflow assignment rules.`;
+    } else if (events.length === 1) {
+      stageDesc += `contains a single task: ${taskNames[0]}.`;
+    } else {
+      stageDesc += `contains ${events.length} tasks executed ${taskOrder}: ${taskNames.join(', ')}.`;
+    }
+
+    // Special capabilities
+    const caps = [];
+    if (events.some(e => e.allowRollback)) caps.push('rollback to a prior stage');
+    if (events.some(e => e.allowCancel)) caps.push('cancellation of the record');
+    if (events.some(e => e.allowRollForward)) caps.push('roll-forward to skip a stage');
+    if (events.some(e => e.allowSubTasks)) caps.push('creation of sub-tasks');
+    if (caps.length > 0) stageDesc += ` This stage supports: ${caps.join(', ')}.`;
+
+    html += `<p>${stageDesc}</p>`;
+  }
+
+  return html;
+}
+
+function descRules(data) {
+  const { rules, fields } = data;
+  let html = '';
+
+  const RULE_NAMES = { MB: 'Module Behavior', WF: 'Workflow', SC: 'Security', EM: 'Email Notification', BS: 'Batch' };
+  const byType = {};
+  for (const r of rules) {
+    const k = r.ruleType || 'Other';
+    if (!byType[k]) byType[k] = [];
+    byType[k].push(r);
+  }
+
+  const typeList = Object.entries(byType)
+    .map(([code, list]) => `<strong>${list.length} ${RULE_NAMES[code] || code}</strong>`)
+    .join(', ');
+
+  html += `<p>The module contains <strong>${rules.length} business rule${rules.length !== 1 ? 's' : ''}</strong> that dynamically control field behavior based on the state of each record. These include: ${typeList}.</p>`;
+
+  html += `<p>Rather than applying fixed static settings, these rules evaluate conditions at runtime — so a field that is optional in one context may become required, hidden, or locked in another based on what has been entered or where the record sits in the workflow.</p>`;
+
+  // RQ rules
+  const rqTargets = rules.flatMap(r => r.targets.filter(t => t.targetType === 'RQ'));
+  const uniqueRqFields = [...new Set(rqTargets.map(t => t.targetCode))];
+  if (uniqueRqFields.length > 0) {
+    const fieldNames = uniqueRqFields.slice(0, 5).map(code => {
+      const f = fields.find(fi => fi.code === code);
+      return f ? `<em>${esc(f.prompt || f.subCode || code)}</em>` : `<em>${esc(code)}</em>`;
+    });
+    const moreCount = uniqueRqFields.length > 5 ? ` (and ${uniqueRqFields.length - 5} more)` : '';
+    html += `<p><strong>Required-field rules</strong> cover ${uniqueRqFields.length} field${uniqueRqFields.length !== 1 ? 's' : ''}: ${fieldNames.join(', ')}${moreCount}. These fields only become mandatory when their associated condition evaluates to true.</p>`;
+  }
+
+  // IN rules
+  const inTargets = rules.flatMap(r => r.targets.filter(t => t.targetType === 'IN'));
+  const uniqueInFields = [...new Set(inTargets.map(t => t.targetCode))];
+  if (uniqueInFields.length > 0) {
+    html += `<p><strong>Visibility rules</strong> can hide <strong>${uniqueInFields.length} field${uniqueInFields.length !== 1 ? 's' : ''}</strong> from the screen based on conditions, keeping the form clean and showing only what is relevant to the current context.</p>`;
+  }
+
+  // NM rules
+  const nmTargets = rules.flatMap(r => r.targets.filter(t => t.targetType === 'NM'));
+  const uniqueNmFields = [...new Set(nmTargets.map(t => t.targetCode))];
+  if (uniqueNmFields.length > 0) {
+    html += `<p><strong>Read-only rules</strong> lock <strong>${uniqueNmFields.length} field${uniqueNmFields.length !== 1 ? 's' : ''}</strong> to prevent editing when a condition is met — for example, after a record has been approved or closed.</p>`;
+  }
+
+  // DFT rules
+  const dftTargets = rules.flatMap(r => r.targets.filter(t => t.targetType === 'DFT'));
+  if (dftTargets.length > 0) {
+    html += `<p>Additionally, <strong>${dftTargets.length} default-value rule${dftTargets.length !== 1 ? 's' : ''}</strong> automatically pre-populate fields, reducing manual data entry and improving consistency.</p>`;
+  }
+
+  return html;
+}
+
+function descRoles(data) {
+  const { roles, workflow } = data;
+  let html = '';
+
+  html += `<p>Access to this module is controlled through <strong>${roles.length} role${roles.length !== 1 ? 's' : ''}</strong>. Each role defines what a user can see, create, edit, and delete within the module.</p>`;
+
+  for (const role of roles) {
+    const name = role.name || role.code;
+    const caps = [];
+    const restrictions = [];
+
+    if (role.allowInitiate) caps.push('create new records');
+    if (role.canEdit) caps.push('edit existing records');
+    if (role.canDelete) caps.push('delete records');
+    if (role.allowSearch) caps.push('search for records');
+    if (role.allowSearchAll) caps.push('search across all records regardless of assignment');
+    if (role.isSuperuser) caps.push('full administrative access (superuser)');
+    if (role.allowAlternateAccess) caps.push('alternate access when not the primary assignee');
+
+    if (!role.allowInitiate) restrictions.push('cannot create new records');
+    if (!role.canEdit) restrictions.push('view-only access to record fields');
+    if (!role.canDelete) restrictions.push('cannot delete records');
+
+    const capText = caps.length > 0 ? `Users in this role can: <em>${caps.join(', ')}</em>.` : '';
+    const restrictText = restrictions.length > 0 && caps.length < 2 ? ` Note: ${restrictions.join('; ')}.` : '';
+
+    html += `<div class="desc-role-card">
+      <div class="desc-role-name">${esc(name)}</div>
+      <div class="desc-role-body">${capText}${restrictText}</div>
+    </div>`;
+  }
+
+  return html;
+}
+
+function descKeyFields(data) {
+  const { fields, statistics: s } = data;
+  let html = '';
+
+  // Identifying fields
+  const identFields = fields.filter(f => f.identifying);
+  if (identFields.length > 0) {
+    const names = identFields.map(f => `<strong>${esc(f.prompt || f.subCode || f.name)}</strong>`).join(', ');
+    html += descCallout(`<strong>Identifying fields</strong> — these ${identFields.length} field${identFields.length !== 1 ? 's' : ''} form the record's display label across lists, search results, and linked references:<br><br>${names}`);
+  }
+
+  // Tracked fields
+  const trackedFields = fields.filter(f => f.trackHistory);
+  if (trackedFields.length > 0) {
+    const names = trackedFields.slice(0, 8).map(f => `<em>${esc(f.prompt || f.subCode || f.name)}</em>`).join(', ');
+    const more = trackedFields.length > 8 ? ` and ${trackedFields.length - 8} more` : '';
+    html += `<p><strong>History tracking</strong> is enabled on ${trackedFields.length} field${trackedFields.length !== 1 ? 's' : ''}, capturing before-and-after values for every change: ${names}${more}. This creates a full audit trail on those fields without any additional configuration.</p>`;
+  }
+
+  // Reference fields
+  const refFields = fields.filter(f => f.type === 'R');
+  if (refFields.length > 0) {
+    const names = refFields.slice(0, 5).map(f => `<em>${esc(f.prompt || f.subCode || f.name)}</em>`).join(', ');
+    const more = refFields.length > 5 ? ` and ${refFields.length - 5} more` : '';
+    html += `<p>The module <strong>links to other modules</strong> through ${refFields.length} reference field${refFields.length !== 1 ? 's' : ''}: ${names}${more}. These fields allow users to associate records across different modules, enabling cross-module traceability and reporting.</p>`;
+  }
+
+  // Calculated fields
+  const calcFields = fields.filter(f => f.calculated || f.type.startsWith('V'));
+  if (calcFields.length > 0) {
+    html += `<p><strong>${calcFields.length} field${calcFields.length !== 1 ? 's are' : ' is'} calculated</strong> — their values are derived automatically from other data in the record or related records, rather than entered manually by users. These keep derived data consistent without relying on manual updates.</p>`;
+  }
+
+  // Search-indexed fields
+  if (s.searchIndexedFields > 0) {
+    html += `<p><strong>${s.searchIndexedFields} field${s.searchIndexedFields !== 1 ? 's are' : ' is'} included in the search index</strong>, making their contents findable through DevonWay's global search and module search features.</p>`;
+  }
+
+  if (identFields.length === 0 && trackedFields.length === 0 && refFields.length === 0 && calcFields.length === 0) {
+    html += `<p>No fields with special properties (identifying, tracked, calculated, or reference) were found in this module export.</p>`;
+  }
+
+  return html;
 }
 
 function buildDataDictionary(data) {
@@ -757,6 +1086,26 @@ tr:nth-child(even) td { background: #F8FAFF; }
 .empty-icon { font-size: 28pt; margin-bottom: 10px; color: #CBD5E1; }
 .empty-title { font-size: 12pt; font-weight: 700; color: #475569; margin-bottom: 6px; }
 .empty-desc { font-size: 9pt; color: #94A3B8; }
+
+/* ─ Module Description ─ */
+.desc-strip { display: flex; flex-wrap: wrap; gap: 10px; background: linear-gradient(135deg, #0F2447, #1B3A6B); border-radius: 10px; padding: 20px 24px; margin-bottom: 28px; }
+.desc-stat { flex: 1; min-width: 90px; text-align: center; }
+.desc-stat-num { display: block; font-size: 26pt; font-weight: 900; color: white; line-height: 1; }
+.desc-stat-label { display: block; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.55); margin-top: 4px; }
+.desc-section { margin-bottom: 32px; }
+.desc-section-title { font-size: 15pt; font-weight: 800; color: #1B3A6B; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 3px solid #D1E0F7; }
+.desc-body p { font-size: 10pt; line-height: 1.75; color: #1A202C; margin-bottom: 12px; }
+.desc-body p:last-child { margin-bottom: 0; }
+.desc-muted { color: #64748B !important; font-size: 9pt !important; }
+.desc-body ul.desc-list { margin: 8px 0 12px 20px; }
+.desc-body ul.desc-list li { font-size: 10pt; line-height: 1.7; color: #1A202C; margin-bottom: 4px; }
+.desc-callout { background: #EBF3FD; border: 1px solid #C3D9F5; border-left: 5px solid #0073E6; border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 14px 0; font-size: 9.5pt; line-height: 1.65; color: #1A202C; }
+.desc-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 16px; background: #F8FAFF; border: 1px solid #D1E0F7; border-radius: 8px; margin: 14px 0; }
+.desc-flow-step { background: #1B3A6B; color: white; padding: 8px 16px; border-radius: 6px; font-size: 9.5pt; font-weight: 700; }
+.desc-flow-arrow { color: #0073E6; font-size: 18pt; font-weight: 900; line-height: 1; }
+.desc-role-card { border: 1px solid #D1E0F7; border-radius: 8px; margin-bottom: 10px; overflow: hidden; display: flex; }
+.desc-role-name { background: linear-gradient(135deg, #1B3A6B, #2D5AA0); color: white; padding: 12px 16px; font-weight: 800; font-size: 10pt; min-width: 160px; display: flex; align-items: center; }
+.desc-role-body { padding: 12px 16px; font-size: 9.5pt; line-height: 1.6; color: #1A202C; flex: 1; }
 
 /* ─ Test Scripts ─ */
 .ts-intro { background: linear-gradient(135deg, #EBF3FD, #F8FAFF); border: 1px solid #D1E0F7; border-left: 5px solid #0073E6; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px; }
