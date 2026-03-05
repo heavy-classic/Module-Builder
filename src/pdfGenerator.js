@@ -36,7 +36,12 @@ async function generateAllPDFs(data) {
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    args: [
+      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+      '--disable-extensions', '--disable-background-networking', '--disable-sync',
+      '--disable-default-apps', '--mute-audio', '--no-first-run',
+      '--js-flags=--max-old-space-size=256',
+    ],
   });
 
   try {

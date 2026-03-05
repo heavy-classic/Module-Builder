@@ -679,7 +679,7 @@
     while (Date.now() - start < timeout) {
       await new Promise(r => setTimeout(r, 3000));
       const res = await fetch(`/job/${jobId}`);
-      if (!res.ok) throw new Error('Lost track of processing job.');
+      if (!res.ok) throw new Error('The server restarted during processing — this can happen with large modules. Please try again.');
       const job = await res.json();
 
       if (job.status === 'done') return job;
