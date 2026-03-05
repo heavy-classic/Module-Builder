@@ -59,7 +59,7 @@ async function generateAllPDFs(data) {
 async function renderPDF(browser, html) {
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 60000 });
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
     return await page.pdf({
       format: 'Letter',
       printBackground: true,
