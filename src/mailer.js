@@ -7,7 +7,10 @@ let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    console.log('[mailer] SMTP not configured — missing env vars:', { SMTP_HOST: !!SMTP_HOST, SMTP_USER: !!SMTP_USER, SMTP_PASS: !!SMTP_PASS });
+    return null;
+  }
 
   transporter = nodemailer.createTransport({
     host: SMTP_HOST,
@@ -20,7 +23,7 @@ function getTransporter() {
 
 async function sendUsageNotification({ moduleData, filename, fileSize, ip, userAgent }) {
   const t = getTransporter();
-  if (!t) return; // SMTP not configured — fail silently
+  if (!t) return;
 
   const m = moduleData.metadata;
   const s = moduleData.statistics;
@@ -57,6 +60,7 @@ async function sendUsageNotification({ moduleData, filename, fileSize, ip, userA
 
   const html = buildHtml({ m, s, filename, fileSize, ip, userAgent, now });
 
+  console.log('[mailer] Sending notification for module:', m.name);
   try {
     await t.sendMail({
       from: '"Module PDF Generator" <' + process.env.SMTP_USER + '>',
@@ -65,8 +69,9 @@ async function sendUsageNotification({ moduleData, filename, fileSize, ip, userA
       text,
       html,
     });
-  } catch (_) {
-    // Fail silently — never surface email errors to users
+    console.log('[mailer] Notification sent to', NOTIFY_TO);
+  } catch (err) {
+    console.error('[mailer] Failed to send notification:', err.message);
   }
 }
 
