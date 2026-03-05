@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const archiver = require('archiver');
 const { parseModuleFile } = require('./src/parser');
 const { generateAllPDFs } = require('./src/pdfGenerator');
+const { sendUsageNotification } = require('./src/mailer');
 
 const app = express();
 const upload = multer({
@@ -56,14 +57,17 @@ app.post('/upload', (req, res, next) => {
   // Respond immediately so Render's load balancer doesn't time out
   res.json({ jobId });
 
+  const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+  const userAgent = req.headers['user-agent'] || '';
+
   // Process in background
-  processJob(jobId, req.file).catch(err => {
+  processJob(jobId, req.file, ip, userAgent).catch(err => {
     console.error('Job failed:', err);
     jobs[jobId] = { ...jobs[jobId], status: 'error', error: err.message };
   });
 });
 
-async function processJob(jobId, file) {
+async function processJob(jobId, file, ip, userAgent) {
   console.log(`[${jobId}] Processing: ${file.originalname} (${(file.size / 1024).toFixed(1)} KB)`);
 
   const moduleData = await parseModuleFile(file.buffer, file.originalname);
@@ -92,6 +96,8 @@ async function processJob(jobId, file) {
     modulePrefix: moduleData.metadata.prefix,
     files: files.map(f => ({ name: f.name, title: f.title, description: f.description })),
   };
+
+  sendUsageNotification({ moduleData, filename: file.originalname, fileSize: file.size, ip, userAgent });
 
   console.log(`[${jobId}] Done`);
 }
