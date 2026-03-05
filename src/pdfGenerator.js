@@ -169,17 +169,17 @@ function buildOverview(data) {
       ${statCard(s.totalWorkflowTasks, 'Workflow Tasks')}
       ${statCard(s.totalRoles, 'Roles')}
       ${statCard(s.totalRules, 'Rules')}
-      ${statCard(s.totalFunctions, 'Functions')}
+      ${statCard(s.totalRegions, 'Regions')}
     </div>`));
 
   // Properties
   const propRows = [
     ['Module Name', m.name],
-    ['Prefix', m.prefix || '—'],
+    ...(m.moduleCode ? [['Module Code', m.moduleCode]] : []),
+    ['Identifier Prefix', m.prefix || '—'],
     ['Category', m.category || '—'],
     ['Module Type', m.moduleType],
     ['Workflow Enabled', m.workflowFlag ? 'Yes' : 'No'],
-    ['Public Data', m.publicFlag ? 'Yes' : 'No'],
     ...(m.version ? [['Version', m.version]] : []),
     ...(m.description ? [['Description', m.description]] : []),
   ];
@@ -275,23 +275,19 @@ function buildDataDictionary(data) {
     const rows = levelFields.map(f => {
       const badges = [];
       if (f.identifying) badges.push(badge('Identifying', 'navy'));
-      if (f.required) badges.push(badge('Required', 'red'));
       if (f.searchIndexed) badges.push(badge('Indexed', 'green'));
       if (f.trackHistory) badges.push(badge('Tracked', 'yellow'));
-      if (f.allowOverflow) badges.push(badge('Overflow', 'blue'));
+      if (f.calculated) badges.push(badge('Calculated', 'blue'));
+      if (f.refreshOnChange) badges.push(badge('Refresh', 'gray'));
 
       const details = [];
-      if (f.length) details.push(`Max: ${f.length} chars`);
-      if (f.height) details.push(`Height: ${f.height} lines`);
-      if (f.calculationOrder) details.push(`Calc order: ${f.calculationOrder}`);
-      if (f.commonField) details.push(`Common: ${f.commonField}`);
-      if (f.displayFormat) details.push(`Format: ${f.displayFormat}`);
-      if (f.region) details.push(`Region: ${f.region}`);
-      if (f.referenceModules.length > 0) details.push(`Refs: ${f.referenceModules.map(m => m.code).join(', ')}`);
+      if (f.width) details.push(`Width: ${f.width}`);
+      if (f.height) details.push(`Height: ${f.height}`);
+      if (f.printRegion) details.push(`Print: ${f.printRegion}`);
       if (f.picklist.length > 0) details.push(`${f.picklist.length} values`);
 
       return `<tr>
-        <td><span class="code">${esc(f.code)}</span></td>
+        <td><span class="code">${esc(f.subCode || f.code)}</span></td>
         <td>${esc(f.prompt || f.name || '—')}</td>
         <td>${esc(f.typeFull || f.type)}</td>
         <td>${badges.join(' ')}</td>
@@ -313,34 +309,18 @@ function buildDataDictionary(data) {
       </div>`);
 
     // Field detail cards for fields with extra info
-    const detailFields = levelFields.filter(f =>
-      f.helpText || f.calculation || f.behaviors.length > 0 || f.picklist.length > 0
-    );
+    const detailFields = levelFields.filter(f => f.helpText || f.picklist.length > 0);
 
     if (detailFields.length > 0) {
       const cards = detailFields.map(f => {
         const items = [];
         if (f.helpText) items.push(`<div class="detail-row"><span class="detail-label">Help Text</span><span>${esc(f.helpText)}</span></div>`);
-        if (f.calculation) items.push(`<div class="detail-row"><span class="detail-label">Calculation</span><div class="code-block">${esc(f.calculation)}</div></div>`);
         if (f.picklist.length > 0) {
-          const pvs = f.picklist.map(v => `<span class="pv">${esc(v.label || v.value)}${v.factor ? ` <em>(${v.factor})</em>` : ''}</span>`).join('');
-          items.push(`<div class="detail-row"><span class="detail-label">Values</span><div class="pv-list">${pvs}</div></div>`);
-        }
-        if (f.behaviors.length > 0) {
-          const bRows = f.behaviors.map(b => `
-            <tr>
-              <td>${esc(b.type)}</td>
-              <td>${b.value ? esc(b.value) : '—'}</td>
-              <td class="dxl">${b.condition ? `<div class="code-block">${esc(b.condition)}</div>` : '—'}</td>
-            </tr>`).join('');
-          items.push(`<div class="detail-row"><span class="detail-label">Behaviors</span>
-            <table class="behavior-table">
-              <thead><tr><th>Behavior</th><th>Value</th><th>Condition (DXL)</th></tr></thead>
-              <tbody>${bRows}</tbody>
-            </table></div>`);
+          const pvs = f.picklist.map(v => `<span class="pv">${esc(v.label || v.value)}</span>`).join('');
+          items.push(`<div class="detail-row"><span class="detail-label">Picklist Values</span><div class="pv-list">${pvs}</div></div>`);
         }
         return `<div class="detail-card">
-          <div class="detail-header"><span class="code">${esc(f.code)}</span> <span class="detail-prompt">${esc(f.prompt || f.name || '')}</span></div>
+          <div class="detail-header"><span class="code">${esc(f.subCode || f.code)}</span> <span class="detail-prompt">${esc(f.prompt || f.name || '')}</span></div>
           ${items.join('')}
         </div>`;
       }).join('');
@@ -356,72 +336,52 @@ function buildWorkflow(data) {
   const { workflow, metadata: m } = data;
   const parts = [];
 
-  if (!workflow.tasks || workflow.tasks.length === 0) {
+  const segments = workflow.segments || [];
+
+  if (segments.length === 0) {
     return emptyState('No Workflow Configured', m.workflowFlag
       ? 'Workflow is enabled but no tasks were found in this export.'
       : 'This module does not use workflow. It is a non-workflow data module.');
   }
 
-  // Visual flow diagram
-  const flowSteps = workflow.tasks.map((t, i) =>
-    `<div class="wf-step">${esc(t.name || t.code || `Task ${i+1}`)}</div>${i < workflow.tasks.length - 1 ? '<div class="wf-arrow">→</div>' : ''}`
+  // Visual flow diagram — segments as steps
+  const flowSteps = segments.map((s, i) =>
+    `<div class="wf-step">${esc(s.name || s.code || `Stage ${i+1}`)}</div>${i < segments.length - 1 ? '<div class="wf-arrow">→</div>' : ''}`
   ).join('');
 
-  parts.push(section('Process Flow', `${workflow.tasks.length} tasks`, `
+  const totalEvents = segments.reduce((n, s) => n + s.events.length, 0);
+  parts.push(section('Process Flow', `${segments.length} stages · ${totalEvents} tasks`, `
     <div class="wf-flow">${flowSteps}</div>`));
 
-  // Workflow settings
-  const settings = [
-    ['Workflow Enabled', workflow.enabled !== false ? 'Yes' : 'No'],
-    ['Reopen Allowed', workflow.reopenEnabled ? 'Yes' : 'No'],
-    ['Rollback Allowed', workflow.rollbackEnabled ? 'Yes' : 'No'],
-  ];
-  parts.push(section('Workflow Settings', '', `
-    <table>
-      <tbody>${settings.map(([k, v]) => `<tr><td class="prop-key">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</tbody>
-    </table>`));
+  // Segment + event detail cards
+  parts.push(`<div class="section-title-only">Stage &amp; Task Definitions</div>`);
 
-  // Task detail cards
-  parts.push(`<div class="section-title-only">Task Definitions</div>`);
+  for (const [i, seg] of segments.entries()) {
+    const TASK_ORDER = { P: 'Parallel', S: 'Sequential' };
+    const orderLabel = TASK_ORDER[seg.taskOrder] || seg.taskOrder;
 
-  for (const [i, task] of workflow.tasks.entries()) {
-    const hasContent = task.assignments.length > 0 || task.skipCondition || task.completionRule || task.rules.length > 0 || task.description;
+    let segContent = '';
+    if (seg.taskOrder) {
+      segContent += `<div class="task-section-label">Task Order: ${esc(orderLabel)}</div>`;
+    }
 
-    let taskContent = '';
-    if (task.description) taskContent += `<div class="task-desc">${esc(task.description)}</div>`;
-
-    if (task.assignments.length > 0) {
-      const rows = task.assignments.map(a => `<tr>
-        <td>${esc(a.type || 'Role')}</td>
-        <td>${esc(a.value || '—')}</td>
-        <td>${a.condition ? `<div class="code-block">${esc(a.condition)}</div>` : '—'}</td>
-      </tr>`).join('');
-      taskContent += `
-        <div class="task-section-label">Assignments</div>
+    if (seg.events.length > 0) {
+      const rows = seg.events.map((ev, ei) => {
+        const flags = [];
+        if (ev.allowRollback) flags.push('Rollback');
+        if (ev.allowCancel) flags.push('Cancel');
+        if (ev.allowRollForward) flags.push('Roll Forward');
+        if (ev.allowSubTasks) flags.push('Sub-Tasks');
+        return `<tr>
+          <td>${ei + 1}</td>
+          <td>${esc(ev.name || ev.code)}</td>
+          <td><span class="code">${esc(ev.code)}</span></td>
+          <td class="muted">${flags.join(', ') || '—'}</td>
+        </tr>`;
+      }).join('');
+      segContent += `
         <table>
-          <thead><tr><th>Type</th><th>Value</th><th>Condition (DXL)</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-    }
-
-    if (task.skipCondition) {
-      taskContent += `<div class="task-section-label">Skip Condition</div><div class="code-block">${esc(task.skipCondition)}</div>`;
-    }
-
-    if (task.completionRule) {
-      taskContent += `<div class="task-section-label">Completion Rule</div><div class="code-block">${esc(task.completionRule)}</div>`;
-    }
-
-    if (task.rules.length > 0) {
-      const rows = task.rules.map(r => `<tr>
-        <td>${esc(r.type)}</td>
-        <td>${r.expression ? `<div class="code-block">${esc(r.expression)}</div>` : '—'}</td>
-        <td>${esc(r.value || '—')}</td>
-      </tr>`).join('');
-      taskContent += `
-        <div class="task-section-label">Task Rules</div>
-        <table>
-          <thead><tr><th>Type</th><th>Expression (DXL)</th><th>Value</th></tr></thead>
+          <thead><tr><th>#</th><th>Task Name</th><th>Code</th><th>Allowed Actions</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
     }
@@ -431,11 +391,12 @@ function buildWorkflow(data) {
         <div class="task-header">
           <div class="task-num">${i + 1}</div>
           <div class="task-info">
-            <div class="task-name">${esc(task.name || task.code || `Task ${i + 1}`)}</div>
-            ${task.code ? `<div class="task-code">Code: ${esc(task.code)}</div>` : ''}
+            <div class="task-name">${esc(seg.name || seg.code || `Stage ${i + 1}`)}</div>
+            <div class="task-code">Code: ${esc(seg.code)}</div>
           </div>
+          ${seg.events.length > 0 ? `<div style="margin-left:auto;opacity:0.7;font-size:9pt">${seg.events.length} task${seg.events.length !== 1 ? 's' : ''}</div>` : ''}
         </div>
-        ${hasContent ? `<div class="task-body">${taskContent}</div>` : '<div class="task-body muted">No additional details in export.</div>'}
+        <div class="task-body">${segContent || '<span class="muted">No tasks defined.</span>'}</div>
       </div>`);
   }
 
@@ -443,101 +404,62 @@ function buildWorkflow(data) {
 }
 
 function buildRules(data) {
-  const { rules, fields, functions } = data;
+  const { rules } = data;
   const parts = [];
 
-  // Field-level behaviors (from rules array)
-  if (rules.length > 0) {
-    // Group by behavior type
-    const byBehavior = {};
-    for (const r of rules) {
-      const key = r.behavior || 'General';
-      if (!byBehavior[key]) byBehavior[key] = [];
-      byBehavior[key].push(r);
-    }
-
-    parts.push(section('Field Rules & Behaviors', `${rules.length} rules`, ''));
-
-    for (const [behavior, ruleSet] of Object.entries(byBehavior)) {
-      const rows = ruleSet.map(r => `<tr>
-        <td><span class="code">${esc(r.target || '—')}</span></td>
-        <td>${esc(r.name || '—')}</td>
-        <td>${r.value ? esc(r.value) : '—'}</td>
-        <td>${r.condition ? `<div class="code-block">${esc(r.condition)}</div>` : '—'}</td>
-      </tr>`).join('');
-
-      parts.push(`
-        <div class="subsection">
-          <div class="subsection-title">${esc(behavior)}</div>
-          <table>
-            <thead><tr><th>Target Field</th><th>Rule Name</th><th>Value</th><th>Condition (DXL)</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`);
-    }
+  if (rules.length === 0) {
+    return emptyState('No Rules Found', 'No module rules were found in this module export.');
   }
 
-  // Inline field behaviors (from field definitions)
-  const fieldsWithBehaviors = fields.filter(f => f.behaviors.length > 0);
-  if (fieldsWithBehaviors.length > 0 && rules.length === 0) {
-    parts.push(section('Field Behaviors', `${fieldsWithBehaviors.length} fields with behaviors`, ''));
-    for (const f of fieldsWithBehaviors) {
-      const rows = f.behaviors.map(b => `<tr>
-        <td>${esc(b.type)}</td>
-        <td>${b.value ? esc(b.value) : '—'}</td>
-        <td>${b.condition ? `<div class="code-block">${esc(b.condition)}</div>` : '—'}</td>
-      </tr>`).join('');
-      parts.push(`
-        <div class="subsection">
-          <div class="subsection-title"><span class="code">${esc(f.code)}</span> — ${esc(f.prompt || f.name || '')}</div>
-          <table>
-            <thead><tr><th>Behavior</th><th>Value</th><th>Condition (DXL)</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`);
-    }
+  // Group rules by type
+  const RULE_TYPE_NAMES = { MB: 'Module Behavior', WF: 'Workflow', SC: 'Security', EM: 'Email', BS: 'Batch' };
+  const byType = {};
+  for (const r of rules) {
+    const key = r.ruleType || 'Other';
+    if (!byType[key]) byType[key] = [];
+    byType[key].push(r);
   }
 
-  // Calculations
-  const calcs = fields.filter(f => f.calculation);
-  if (calcs.length > 0) {
-    parts.push(section('Field Calculations', `${calcs.length} calculated fields`, ''));
-    for (const f of calcs) {
-      parts.push(`
-        <div class="calc-block">
-          <div class="calc-header">
-            <span class="code">${esc(f.code)}</span>
-            <span class="calc-prompt">${esc(f.prompt || f.name || '')}</span>
-            ${f.calculationOrder ? `<span class="badge badge-blue">Order: ${esc(f.calculationOrder)}</span>` : ''}
-            ${f.calculationLoops ? `<span class="badge badge-yellow">Loops: ${esc(f.calculationLoops)}</span>` : ''}
-          </div>
-          <div class="code-block">${esc(f.calculation)}</div>
-        </div>`);
-    }
-  }
+  parts.push(section('Module Rules', `${rules.length} rules`, ''));
 
-  // Functions
-  if (functions.length > 0) {
-    parts.push(section('Module Functions', `${functions.length} functions`, ''));
-    for (const fn of functions) {
-      const params = fn.parameters.length > 0
-        ? fn.parameters.map(p => `${esc(p.name)}${p.type ? `: ${esc(p.type)}` : ''}`).join(', ')
-        : 'none';
-      parts.push(`
-        <div class="func-card">
-          <div class="func-header">
-            <span class="func-name">${esc(fn.name || fn.code)}</span>
-            <span class="func-sig">(${params})</span>
-            ${fn.returnType ? `<span class="badge badge-blue">→ ${esc(fn.returnType)}</span>` : ''}
-          </div>
-          ${fn.description ? `<div class="func-desc">${esc(fn.description)}</div>` : ''}
-          ${fn.body ? `<div class="code-block">${esc(fn.body)}</div>` : ''}
-        </div>`);
-    }
-  }
+  for (const [ruleType, ruleSet] of Object.entries(byType)) {
+    const typLabel = RULE_TYPE_NAMES[ruleType] || ruleType;
+    const ruleCards = ruleSet.map(r => {
+      const TARGET_LABELS = {
+        IN: 'Invisible', NM: 'Non-Modifiable', RQ: 'Required',
+        DFT: 'Default', GR: 'Grid', BL: 'Bold', IT: 'Italics',
+        BC: 'Bg Color', TC: 'Text Color',
+      };
+      const targetRows = r.targets.map(t => {
+        const tLabel = TARGET_LABELS[t.targetType] || t.targetType;
+        const badgeColor = t.targetType === 'RQ' ? 'red' : t.targetType === 'IN' ? 'yellow' : t.targetType === 'NM' ? 'blue' : 'gray';
+        return `<tr>
+          <td><span class="code">${esc(t.targetCode || '—')}</span></td>
+          <td>${badge(tLabel, badgeColor)}</td>
+          <td class="muted">${t.targetLogic ? esc(t.targetLogic) : '—'}</td>
+        </tr>`;
+      }).join('');
 
-  if (rules.length === 0 && fieldsWithBehaviors.length === 0 && calcs.length === 0 && functions.length === 0) {
-    return emptyState('No Rules or Behaviors Found', 'No rules, behaviors, or calculations were found in this module export.');
+      return `<div class="calc-block">
+        <div class="calc-header">
+          <span style="font-weight:700;color:#1B3A6B">${esc(r.name || r.code)}</span>
+          ${r.sortOrder ? `<span class="badge badge-gray">Order: ${r.sortOrder}</span>` : ''}
+          <span class="badge badge-blue">${r.targets.length} target${r.targets.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${r.condition ? `<div class="code-block">${esc(r.condition)}</div>` : ''}
+        ${r.targets.length > 0 ? `
+          <table class="behavior-table" style="margin-top:6px">
+            <thead><tr><th>Target Field</th><th>Behavior</th><th>Value / Logic</th></tr></thead>
+            <tbody>${targetRows}</tbody>
+          </table>` : ''}
+      </div>`;
+    }).join('');
+
+    parts.push(`
+      <div class="subsection">
+        <div class="subsection-title">${esc(typLabel)} — ${ruleSet.length} rule${ruleSet.length !== 1 ? 's' : ''}</div>
+        ${ruleCards}
+      </div>`);
   }
 
   return parts.join('');
@@ -551,133 +473,97 @@ function buildLayout(data) {
     return emptyState('No Layout Data Found', 'No region or layout definitions were found in this module export.');
   }
 
-  // Declared regions
+  // Region summary
   if (regions.length > 0) {
-    const rows = regions.map(r => `<tr>
-      <td>${esc(r.name || '—')}</td>
-      <td>${esc(r.style || '—')}</td>
-      <td>${esc(r.tab || '—')}</td>
-      <td>${r.fields.length > 0 ? r.fields.map(f => `<span class="code">${esc(f)}</span>`).join(' ') : '—'}</td>
-    </tr>`).join('');
-
+    const STYLES = { GR: 'Grid', CS: 'Card Stack', HP: 'Horizontal', VP: 'Vertical', TG: 'Tab Group' };
+    const rows = regions.map(r => {
+      const parentCell = r.parentRegion ? esc(r.parentRegion) : '—';
+      return `<tr><td><span class="code">${esc(r.code)}</span></td><td>${esc(r.name || '—')}</td><td>${esc(STYLES[r.style] || r.style || '—')}</td><td>${esc(r.level || '—')}</td><td>${parentCell}</td></tr>`;
+    }).join('');
     parts.push(section('Screen Regions', `${regions.length} regions`, `
       <table>
-        <thead><tr><th>Region Name</th><th>Style</th><th>Tab Group</th><th>Fields</th></tr></thead>
+        <thead><tr><th>Code</th><th>Name</th><th>Style</th><th>Level</th><th>Parent</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`));
   }
 
-  // Fields grouped by region (from field properties)
-  const fieldsWithRegion = fields.filter(f => f.region || f.regionMiramar);
+  // Fields grouped by region
+  const fieldsWithRegion = fields.filter(f => f.region);
   if (fieldsWithRegion.length > 0) {
     const byRegion = {};
     for (const f of fieldsWithRegion) {
-      const key = f.region || f.regionMiramar || 'Default';
-      if (!byRegion[key]) byRegion[key] = [];
-      byRegion[key].push(f);
+      if (!byRegion[f.region]) byRegion[f.region] = [];
+      byRegion[f.region].push(f);
     }
+    const regionMap = {};
+    for (const r of regions) regionMap[r.code] = r.name;
 
     parts.push(section('Field Region Assignments', '', ''));
-    for (const [regionName, regionFields] of Object.entries(byRegion)) {
+    for (const [regionCode, regionFields] of Object.entries(byRegion)) {
+      const regionLabel = regionMap[regionCode] ? `${regionMap[regionCode]} (${regionCode})` : regionCode;
       const rows = regionFields
         .sort((a, b) => a.order - b.order || a.code.localeCompare(b.code))
-        .map(f => `<tr>
-          <td><span class="code">${esc(f.code)}</span></td>
-          <td>${esc(f.prompt || f.name || '—')}</td>
-          <td>${esc(f.typeFull || f.type)}</td>
-          <td>${f.order || '—'}</td>
-          ${f.regionMiramar ? `<td>${esc(f.regionMiramar)}</td>` : ''}
-          ${f.printRegion ? `<td>${esc(f.printRegion)}</td>` : ''}
-        </tr>`).join('');
-
-      const hasMiramar = regionFields.some(f => f.regionMiramar);
-      const hasPrint = regionFields.some(f => f.printRegion);
-
+        .map(f => {
+          return `<tr><td><span class="code">${esc(f.subCode || f.code)}</span></td><td>${esc(f.prompt || f.name || '—')}</td><td>${esc(f.typeFull || f.type)}</td><td>${f.order || '—'}</td><td class="muted">${esc(f.printRegion || '—')}</td></tr>`;
+        }).join('');
       parts.push(`
         <div class="subsection">
-          <div class="subsection-title">${esc(regionName)}</div>
+          <div class="subsection-title">${esc(regionLabel)}</div>
           <table>
-            <thead><tr><th>Field Code</th><th>Prompt</th><th>Type</th><th>Order</th>${hasMiramar ? '<th>Miramar Region</th>' : ''}${hasPrint ? '<th>Print Region</th>' : ''}</tr></thead>
+            <thead><tr><th>Field Code</th><th>Prompt</th><th>Type</th><th>Order</th><th>Print Region</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>`);
     }
   }
 
-  // Fields without region (unassigned)
-  const unassigned = fields.filter(f => !f.region && !f.regionMiramar);
-  if (unassigned.length > 0 && regions.length === 0) {
-    // Show all fields in a simple layout table
-    parts.push(section('All Fields (No Region Data)', `${fields.length} fields`, `
-      <table>
-        <thead><tr><th>Field Code</th><th>Prompt</th><th>Level</th><th>Type</th><th>Order</th></tr></thead>
-        <tbody>${fields.map(f => `<tr>
-          <td><span class="code">${esc(f.code)}</span></td>
-          <td>${esc(f.prompt || f.name || '—')}</td>
-          <td>${esc(f.level)}</td>
-          <td>${esc(f.typeFull || f.type)}</td>
-          <td>${f.order || '—'}</td>
-        </tr>`).join('')}</tbody>
-      </table>`));
-  }
-
   return parts.join('');
 }
 
 function buildSecurity(data) {
-  const { roles, fields, metadata: m } = data;
+  const { roles, rules } = data;
   const parts = [];
 
   if (roles.length === 0) {
     return emptyState('No Role Definitions Found', 'No role or security configurations were found in this module export.');
   }
 
-  // Role summary
-  parts.push(section('Roles', `${roles.length} roles defined`, `
+  parts.push(section('Module Roles', `${roles.length} roles defined`, `
     <table>
-      <thead><tr><th>Role Name</th><th>Code</th><th>Workflow Role</th><th>Description</th><th>Permissions</th></tr></thead>
+      <thead><tr><th>Role Name</th><th>Code</th><th>Edit</th><th>Delete</th><th>Search All</th><th>Superuser</th><th>Initiate</th></tr></thead>
       <tbody>${roles.map(r => `<tr>
         <td><strong>${esc(r.name || '—')}</strong></td>
         <td><span class="code">${esc(r.code || '—')}</span></td>
-        <td>${r.isWorkflowRole ? badge('Yes', 'green') : badge('No', 'gray')}</td>
-        <td>${esc(r.description || '—')}</td>
-        <td>${r.permissions.length} configured</td>
+        <td>${r.canEdit ? badge('Yes', 'green') : badge('No', 'gray')}</td>
+        <td>${r.canDelete ? badge('Yes', 'red') : badge('No', 'gray')}</td>
+        <td>${r.allowSearchAll ? badge('Yes', 'blue') : badge('No', 'gray')}</td>
+        <td>${r.isSuperuser ? badge('Yes', 'yellow') : '—'}</td>
+        <td>${r.allowInitiate ? badge('Yes', 'green') : badge('No', 'gray')}</td>
       </tr>`).join('')}</tbody>
     </table>`));
 
-  // Role permission details
-  for (const role of roles) {
-    if (role.permissions.length === 0) continue;
-    const rows = role.permissions.map(p => `<tr>
-      <td><span class="code">${esc(p.field || '—')}</span></td>
-      <td>${p.canView ? badge('✓', 'green') : badge('✗', 'gray')}</td>
-      <td>${p.canEdit ? badge('✓', 'green') : badge('✗', 'gray')}</td>
-      <td>${p.canCreate ? badge('✓', 'green') : badge('✗', 'gray')}</td>
-    </tr>`).join('');
+  const securityRules = rules.filter(r =>
+    r.targets.some(t => ['IN', 'NM', 'RQ'].includes(t.targetType))
+  );
 
-    parts.push(`
-      <div class="subsection">
-        <div class="subsection-title">${esc(role.name)} Permissions</div>
-        <table>
-          <thead><tr><th>Field</th><th>View</th><th>Edit</th><th>Create</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`);
-  }
-
-  // Field-level restrictions from field properties
-  const restricted = fields.filter(f => f.hiddenFromRest || f.required);
-  if (restricted.length > 0) {
-    parts.push(section('Field-Level Restrictions', '', `
+  if (securityRules.length > 0) {
+    const TARGET_LABELS = { IN: 'Invisible', NM: 'Non-Modifiable', RQ: 'Required' };
+    const COLORS = { IN: 'yellow', NM: 'blue', RQ: 'red' };
+    const rows = securityRules.map(r => {
+      const targets = r.targets
+        .filter(t => ['IN', 'NM', 'RQ'].includes(t.targetType))
+        .map(t => `<span class="code" style="font-size:7pt">${esc(t.targetCode)}</span> ${badge(TARGET_LABELS[t.targetType] || t.targetType, COLORS[t.targetType] || 'gray')}`)
+        .join('<br>');
+      return `<tr>
+        <td>${esc(r.name || r.code)}</td>
+        <td>${r.condition ? `<div class="code-block">${esc(r.condition)}</div>` : '—'}</td>
+        <td>${targets}</td>
+      </tr>`;
+    }).join('');
+    parts.push(section('Field Access Rules', `${securityRules.length} rules controlling field visibility/access`, `
       <table>
-        <thead><tr><th>Field Code</th><th>Prompt</th><th>Type</th><th>REST Hidden</th><th>Required</th></tr></thead>
-        <tbody>${restricted.map(f => `<tr>
-          <td><span class="code">${esc(f.code)}</span></td>
-          <td>${esc(f.prompt || f.name || '—')}</td>
-          <td>${esc(f.type)}</td>
-          <td>${f.hiddenFromRest ? badge('Yes', 'red') : '—'}</td>
-          <td>${f.required ? badge('Yes', 'yellow') : '—'}</td>
-        </tr>`).join('')}</tbody>
+        <thead><tr><th>Rule Name</th><th>Condition (DXL)</th><th>Field / Behavior</th></tr></thead>
+        <tbody>${rows}</tbody>
       </table>`));
   }
 
