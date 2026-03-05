@@ -21,10 +21,12 @@ const upload = multer({
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory session store: sessionId → { files: [{name, path, description}], createdAt }
+// job store: jobId → { status, result?, error? }
+const jobs = {};
+// session store: sessionId → { files, dir, createdAt }
 const sessions = {};
 
-// Clean up sessions older than 1 hour
+// Clean up old sessions and jobs every 15 mins
 setInterval(() => {
   const cutoff = Date.now() - 3600000;
   for (const [id, session] of Object.entries(sessions)) {
@@ -34,51 +36,71 @@ setInterval(() => {
       delete sessions[id];
     }
   }
+  for (const [id, job] of Object.entries(jobs)) {
+    if (job.createdAt < cutoff) delete jobs[id];
+  }
 }, 15 * 60 * 1000);
 
+// POST /upload — accepts file, responds immediately with jobId, processes in background
 app.post('/upload', (req, res, next) => {
   upload.single('module')(req, res, err => {
     if (err) return res.status(400).json({ error: err.message });
     next();
   });
-}, async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded.' });
+}, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+
+  const jobId = uuidv4();
+  jobs[jobId] = { status: 'processing', createdAt: Date.now() };
+
+  // Respond immediately so Render's load balancer doesn't time out
+  res.json({ jobId });
+
+  // Process in background
+  processJob(jobId, req.file).catch(err => {
+    console.error('Job failed:', err);
+    jobs[jobId] = { ...jobs[jobId], status: 'error', error: err.message };
+  });
+});
+
+async function processJob(jobId, file) {
+  console.log(`[${jobId}] Processing: ${file.originalname} (${(file.size / 1024).toFixed(1)} KB)`);
+
+  const moduleData = await parseModuleFile(file.buffer, file.originalname);
+  console.log(`[${jobId}] Parsed: ${moduleData.metadata.name} — ${moduleData.fields.length} fields, ${moduleData.workflow.tasks.length} tasks`);
+
+  const pdfs = await generateAllPDFs(moduleData);
+  console.log(`[${jobId}] Generated ${pdfs.length} PDFs`);
+
+  const sessionId = uuidv4();
+  const sessionDir = path.join(os.tmpdir(), `devonway-${sessionId}`);
+  fs.mkdirSync(sessionDir, { recursive: true });
+
+  const files = [];
+  for (const pdf of pdfs) {
+    const filePath = path.join(sessionDir, pdf.filename);
+    fs.writeFileSync(filePath, pdf.buffer);
+    files.push({ name: pdf.filename, description: pdf.description, title: pdf.title, path: filePath });
   }
 
-  try {
-    console.log(`Processing: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
+  sessions[sessionId] = { files, dir: sessionDir, createdAt: Date.now() };
+  jobs[jobId] = {
+    ...jobs[jobId],
+    status: 'done',
+    sessionId,
+    moduleName: moduleData.metadata.name,
+    modulePrefix: moduleData.metadata.prefix,
+    files: files.map(f => ({ name: f.name, title: f.title, description: f.description })),
+  };
 
-    const moduleData = await parseModuleFile(req.file.buffer, req.file.originalname);
-    console.log(`Parsed module: ${moduleData.metadata.name} [${moduleData.metadata.prefix}]`);
-    console.log(`  Fields: ${moduleData.fields.length}, Tasks: ${moduleData.workflow.tasks.length}, Rules: ${moduleData.rules.length}`);
+  console.log(`[${jobId}] Done`);
+}
 
-    const pdfs = await generateAllPDFs(moduleData);
-    console.log(`Generated ${pdfs.length} PDFs`);
-
-    const sessionId = uuidv4();
-    const sessionDir = path.join(os.tmpdir(), `devonway-${sessionId}`);
-    fs.mkdirSync(sessionDir, { recursive: true });
-
-    const files = [];
-    for (const pdf of pdfs) {
-      const filePath = path.join(sessionDir, pdf.filename);
-      fs.writeFileSync(filePath, pdf.buffer);
-      files.push({ name: pdf.filename, description: pdf.description, title: pdf.title, path: filePath });
-    }
-
-    sessions[sessionId] = { files, dir: sessionDir, createdAt: Date.now() };
-
-    res.json({
-      sessionId,
-      moduleName: moduleData.metadata.name,
-      modulePrefix: moduleData.metadata.prefix,
-      files: files.map(f => ({ name: f.name, title: f.title, description: f.description })),
-    });
-  } catch (err) {
-    console.error('Processing error:', err);
-    res.status(500).json({ error: err.message || 'Failed to process module file.' });
-  }
+// GET /job/:jobId — poll for job status
+app.get('/job/:jobId', (req, res) => {
+  const job = jobs[req.params.jobId];
+  if (!job) return res.status(404).json({ error: 'Job not found.' });
+  res.json(job);
 });
 
 app.get('/download/:sessionId/:filename', (req, res) => {

@@ -642,34 +642,49 @@
     }
 
     showProcessing();
+    setStep('step-parse', 'active');
 
     const formData = new FormData();
     formData.append('module', file);
 
-    // Animate steps
-    setTimeout(() => setStep('step-parse', 'active'), 200);
-    setTimeout(() => { setStep('step-parse', 'done'); setStep('step-gen', 'active'); }, 3000);
-    setTimeout(() => { setStep('step-gen', 'done'); setStep('step-pack', 'active'); }, 18000);
-
     try {
-      const res = await fetch('/upload', { method: 'POST', body: formData });
+      // Upload and get jobId immediately
+      const uploadRes = await fetch('/upload', { method: 'POST', body: formData });
+      const uploadData = await uploadRes.json().catch(() => { throw new Error(`Upload failed (${uploadRes.status})`); });
+      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed.');
 
-      let data;
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-        throw new Error(`Server error (${res.status}): ${text.slice(0, 200)}`);
-      }
+      const { jobId } = uploadData;
+      setStep('step-parse', 'done');
+      setStep('step-gen', 'active');
 
-      if (!res.ok) throw new Error(data.error || 'Processing failed.');
+      // Poll for job completion
+      const result = await pollJob(jobId);
+      setStep('step-gen', 'done');
+      setStep('step-pack', 'active');
 
+      await new Promise(r => setTimeout(r, 400));
       setStep('step-pack', 'done');
-      showResults(data);
+      showResults(result);
     } catch (err) {
       showError(err.message);
     }
+  }
+
+  async function pollJob(jobId) {
+    const start = Date.now();
+    const timeout = 5 * 60 * 1000; // 5 minutes max
+
+    while (Date.now() - start < timeout) {
+      await new Promise(r => setTimeout(r, 3000));
+      const res = await fetch(`/job/${jobId}`);
+      if (!res.ok) throw new Error('Lost track of processing job.');
+      const job = await res.json();
+
+      if (job.status === 'done') return job;
+      if (job.status === 'error') throw new Error(job.error || 'Processing failed.');
+      // status === 'processing' → keep polling
+    }
+    throw new Error('Processing timed out. Try a smaller module file.');
   }
 
   function setStep(id, state) {
