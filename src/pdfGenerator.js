@@ -28,6 +28,7 @@ const DOC_TYPES = [
   { id: 'rules',            title: 'Rules & Behaviors',     description: 'DXL rules and field behavior configurations' },
   { id: 'layout',           title: 'Layout Reference',      description: 'Screen regions and field placement' },
   { id: 'security',         title: 'Security Reference',    description: 'Roles, permissions, and access control' },
+  { id: 'test-scripts',     title: 'Test Scripts',          description: 'UAT test cases for workflow, roles, rules, and field validation' },
 ];
 
 async function generateAllPDFs(data) {
@@ -90,6 +91,7 @@ function buildDocument(doc, data) {
     case 'rules':           bodyContent = buildRules(data); break;
     case 'layout':          bodyContent = buildLayout(data); break;
     case 'security':        bodyContent = buildSecurity(data); break;
+    case 'test-scripts':    bodyContent = buildTestScripts(data); break;
     default:                bodyContent = '<p>Content unavailable.</p>';
   }
 
@@ -755,7 +757,536 @@ tr:nth-child(even) td { background: #F8FAFF; }
 .empty-icon { font-size: 28pt; margin-bottom: 10px; color: #CBD5E1; }
 .empty-title { font-size: 12pt; font-weight: 700; color: #475569; margin-bottom: 6px; }
 .empty-desc { font-size: 9pt; color: #94A3B8; }
+
+/* ─ Test Scripts ─ */
+.ts-intro { background: linear-gradient(135deg, #EBF3FD, #F8FAFF); border: 1px solid #D1E0F7; border-left: 5px solid #0073E6; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px; }
+.ts-intro-title { font-size: 11pt; font-weight: 800; color: #1B3A6B; margin-bottom: 8px; }
+.ts-intro-body p { font-size: 9pt; color: #475569; margin-bottom: 10px; line-height: 1.6; }
+.ts-legend { display: flex; gap: 20px; flex-wrap: wrap; }
+.ts-legend-item { display: flex; align-items: center; gap: 6px; font-size: 8pt; color: #475569; }
+.ts-status { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.05em; }
+.ts-pass    { background: #D1FAE5; color: #065F46; }
+.ts-fail    { background: #FEE2E2; color: #991B1B; }
+.ts-blocked { background: #FEF3C7; color: #92400E; }
+.ts-na      { background: #F1F5F9; color: #475569; }
+
+.ts-prereq-table { margin-bottom: 14px; }
+.ts-check-col { width: 60px; text-align: center; background: #FAFAFA; border-left: 2px solid #E2E8F0; }
+
+.ts-tester-block { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; background: #F8FAFF; border: 1px solid #D1E0F7; border-radius: 6px; }
+.ts-tester-row { display: flex; align-items: center; gap: 8px; }
+.ts-tester-label { font-size: 8pt; font-weight: 700; color: #1B3A6B; white-space: nowrap; min-width: 110px; }
+.ts-tester-line { flex: 1; border-bottom: 1.5px solid #94A3B8; min-width: 80px; height: 16px; }
+
+/* Test case card */
+.ts-card { border: 1px solid #D1E0F7; border-radius: 8px; margin-bottom: 20px; overflow: hidden; page-break-inside: avoid; }
+.ts-card-header { background: linear-gradient(135deg, #1B3A6B, #2D5AA0); color: white; padding: 12px 16px; display: flex; align-items: flex-start; gap: 14px; }
+.ts-card-id { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; padding: 3px 10px; font-family: 'Consolas','Courier New',monospace; font-size: 8.5pt; font-weight: 800; white-space: nowrap; }
+.ts-card-obj { flex: 1; font-size: 10pt; font-weight: 700; line-height: 1.3; padding-top: 1px; }
+.ts-card-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.ts-role-badge { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); border-radius: 4px; padding: 2px 8px; font-size: 7.5pt; font-weight: 700; white-space: nowrap; }
+.ts-card-precond { background: #FFFBEB; border-bottom: 1px solid #FDE68A; padding: 8px 16px; font-size: 8.5pt; color: #78350F; }
+.ts-precond-label { font-weight: 700; text-transform: uppercase; font-size: 7.5pt; letter-spacing: 0.08em; }
+.ts-inline-code { background: #FEF3C7; color: #78350F; padding: 0 5px; border-radius: 3px; font-size: 7.5pt; font-family: 'Consolas','Courier New',monospace; }
+
+/* Steps table */
+.ts-steps-table { border-radius: 0; border: none; border-top: 1px solid #E8F0FE; margin: 0; }
+.ts-steps-table th { background: #2D5AA0; font-size: 7pt; padding: 6px 8px; }
+.ts-steps-table td { font-size: 8pt; padding: 7px 8px; vertical-align: top; border-bottom: 1px solid #EEF2FF; }
+.ts-steps-table tr:last-child td { border-bottom: none; }
+.ts-steps-table tr:nth-child(even) td { background: #F8FAFF; }
+.ts-step-num { text-align: center; font-weight: 700; color: #1B3A6B; width: 26px; background: #EBF3FD !important; }
+.ts-step-action { color: #1A202C; }
+.ts-step-data { color: #475569; font-size: 7.5pt; font-style: italic; }
+.ts-step-expected { color: #065F46; font-size: 8pt; }
+.ts-step-actual { background: #FAFFF8 !important; border-left: 2px solid #6EE7B7; }
+.ts-step-status { text-align: center; background: #FFF8F8 !important; border-left: 2px solid #FCA5A5; }
+.ts-status-check { font-size: 7pt; line-height: 1.8; color: #475569; text-align: left; white-space: nowrap; }
+
+/* Sign-off */
+.ts-signoff { }
+.ts-summary-table { max-width: 320px; margin-bottom: 24px; }
+.ts-signoff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+.ts-signoff-block { }
+.ts-signoff-label { font-size: 8pt; font-weight: 700; color: #1B3A6B; margin-bottom: 28px; }
+.ts-signoff-line { border-bottom: 1.5px solid #1B3A6B; margin-bottom: 4px; }
+.ts-signoff-sublabel { font-size: 7.5pt; color: #94A3B8; }
+.ts-comments-box { border: 1px solid #D1E0F7; border-radius: 6px; padding: 12px; min-height: 80px; }
+.ts-comments-label { font-size: 8pt; font-weight: 700; color: #94A3B8; }
 `;
+}
+
+// ─── Test Scripts ─────────────────────────────────────────────────────────────
+
+function buildTestScripts(data) {
+  const { metadata: m, fields, workflow, roles, rules } = data;
+  const parts = [];
+  let tcNum = 1;
+
+  const prefix = m.prefix || m.moduleCode || 'TC';
+  const tcId = (n) => `${prefix}-TS-${String(n).padStart(3, '0')}`;
+
+  // Intro / how to use
+  parts.push(`
+<div class="ts-intro">
+  <div class="ts-intro-title">How to Use This Test Script</div>
+  <div class="ts-intro-body">
+    <p>This document provides structured User Acceptance Testing (UAT) scenarios for the <strong>${esc(m.name)}</strong> module.
+    Each test case follows a standard format: objective, prerequisites, step-by-step actions, expected results, and capture fields for actual results and pass/fail status.</p>
+    <div class="ts-legend">
+      <div class="ts-legend-item"><span class="ts-status ts-pass">PASS</span> Test completed successfully</div>
+      <div class="ts-legend-item"><span class="ts-status ts-fail">FAIL</span> Actual result did not match expected</div>
+      <div class="ts-legend-item"><span class="ts-status ts-blocked">BLOCKED</span> Could not execute — document reason</div>
+      <div class="ts-legend-item"><span class="ts-status ts-na">N/A</span> Not applicable in this environment</div>
+    </div>
+  </div>
+</div>`);
+
+  // ── SECTION A: Prerequisites ──────────────────────────────────────────────
+  parts.push(section('A. Test Prerequisites', '', `
+    <table class="ts-prereq-table">
+      <thead><tr><th>#</th><th>Prerequisite</th><th>Verified ✓</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Test environment is accessible and available</td><td class="ts-check-col"></td></tr>
+        <tr><td>2</td><td>Tester has a valid DevonWay user account with access to the <strong>${esc(m.name)}</strong> module</td><td class="ts-check-col"></td></tr>
+        ${roles.length > 0 ? `<tr><td>3</td><td>Test accounts are configured for the following roles: <strong>${roles.map(r => esc(r.name || r.code)).join(', ')}</strong></td><td class="ts-check-col"></td></tr>` : ''}
+        <tr><td>${roles.length > 0 ? 4 : 3}</td><td>Any reference modules linked from this module are populated with test data</td><td class="ts-check-col"></td></tr>
+        <tr><td>${roles.length > 0 ? 5 : 4}</td><td>Test execution log / defect tracker is open and ready</td><td class="ts-check-col"></td></tr>
+      </tbody>
+    </table>
+    <div class="ts-tester-block">
+      <div class="ts-tester-row"><span class="ts-tester-label">Tester Name:</span><span class="ts-tester-line"></span></div>
+      <div class="ts-tester-row"><span class="ts-tester-label">Test Date:</span><span class="ts-tester-line"></span></div>
+      <div class="ts-tester-row"><span class="ts-tester-label">Environment:</span><span class="ts-tester-line"></span></div>
+      <div class="ts-tester-row"><span class="ts-tester-label">Module Version:</span><span class="ts-tester-line"></span></div>
+    </div>`));
+
+  // ── SECTION B: Record Creation (Happy Path) ───────────────────────────────
+  const identFields = fields.filter(f => f.identifying);
+  const reqFields = [];
+  for (const r of rules) {
+    for (const t of r.targets) {
+      if (t.targetType === 'RQ') {
+        const f = fields.find(fi => fi.code === t.targetCode);
+        if (f && !reqFields.find(x => x.code === f.code)) reqFields.push(f);
+      }
+    }
+  }
+  const picklistFields = fields.filter(f => f.picklist && f.picklist.length > 0).slice(0, 5);
+
+  parts.push(section('B. Record Creation', '', testCase(
+    tcId(tcNum++),
+    'Verify that a new module record can be successfully created with valid data',
+    roles.find(r => r.canInitiate || r.allowInitiate) ? (roles.find(r => r.canInitiate || r.allowInitiate).name || 'Initiator Role') : (roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User'),
+    'High',
+    'User is logged in with a role that has permission to create records in this module.',
+    [
+      { action: `Navigate to the ${esc(m.name)} module`, data: '—', expected: 'Module list view loads without errors' },
+      { action: 'Click the button or link to create a new record (e.g., "New", "Add", "Initiate")', data: '—', expected: 'Blank record form opens' },
+      ...identFields.slice(0, 3).map(f => ({
+        action: `Enter a value in the <strong>${esc(f.prompt || f.name || f.subCode)}</strong> field`,
+        data: `[Provide valid ${esc(f.type)} test value]`,
+        expected: `Field accepts the value and displays it correctly`,
+      })),
+      ...reqFields.slice(0, 4).map(f => ({
+        action: `Complete the required field: <strong>${esc(f.prompt || f.name || f.subCode)}</strong>`,
+        data: `[Provide valid test value]`,
+        expected: `Field is filled; required indicator is satisfied`,
+      })),
+      ...picklistFields.slice(0, 2).map(f => ({
+        action: `Select a value from the <strong>${esc(f.prompt || f.name || f.subCode)}</strong> picklist`,
+        data: f.picklist.slice(0, 3).map(v => esc(v.label || v.value)).join(' / '),
+        expected: `Picklist opens and the selected value is saved`,
+      })),
+      { action: 'Save / submit the record', data: '—', expected: 'Record saves without errors; record ID is assigned; confirmation message or redirect occurs' },
+      { action: 'Re-open the saved record', data: '—', expected: 'All entered values persist correctly' },
+    ]
+  )));
+
+  // Negative: create record without required fields
+  if (reqFields.length > 0) {
+    parts.push(testCase(
+      tcId(tcNum++),
+      'Verify that saving a record without required fields is blocked with appropriate validation messages',
+      roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+      'High',
+      'A new record form is open.',
+      [
+        { action: 'Open a new record form', data: '—', expected: 'Blank form displays' },
+        { action: `Leave the following required fields empty: <strong>${reqFields.slice(0, 3).map(f => esc(f.prompt || f.subCode)).join(', ')}</strong>`, data: '(leave blank)', expected: 'Fields remain empty' },
+        { action: 'Attempt to save the record', data: '—', expected: `Save is blocked; validation error message identifies the missing required field(s)` },
+      ]
+    ));
+  }
+
+  // ── SECTION C: Workflow Stage Progression ─────────────────────────────────
+  const segments = workflow.segments || [];
+  if (segments.length > 0) {
+    parts.push(section('C. Workflow Stage Progression', `${segments.length} stages`, ''));
+
+    // One test case per segment transition
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      const nextSeg = segments[i + 1];
+      const events = seg.events || [];
+
+      const steps = [
+        { action: `Open an existing record in the <strong>${esc(seg.name || seg.code)}</strong> stage`, data: '—', expected: `Record opens; current stage is shown as "${esc(seg.name || seg.code)}"` },
+        ...events.slice(0, 4).map(ev => ({
+          action: `Verify that the task/action <strong>${esc(ev.name || ev.code)}</strong> is available`,
+          data: '—',
+          expected: `Task button or link is visible and enabled for authorized users`,
+        })),
+      ];
+
+      if (events.length > 0) {
+        steps.push({
+          action: `Execute the primary task: <strong>${esc(events[0].name || events[0].code)}</strong>`,
+          data: '[Enter any required task-specific information]',
+          expected: nextSeg
+            ? `Record advances to the <strong>${esc(nextSeg.name || nextSeg.code)}</strong> stage; audit trail entry is created`
+            : `Record completes the workflow; final state is recorded`,
+        });
+      }
+
+      if (events.some(ev => ev.allowRollback)) {
+        steps.push({
+          action: 'Test rollback: click the Rollback action if available',
+          data: '[Enter rollback reason if prompted]',
+          expected: 'Record returns to the previous stage; rollback is logged',
+        });
+      }
+
+      if (events.some(ev => ev.allowCancel)) {
+        steps.push({
+          action: 'Test cancel: click the Cancel action on a separate test record',
+          data: '[Enter cancellation reason if prompted]',
+          expected: 'Record is marked as cancelled; no further workflow actions available',
+        });
+      }
+
+      parts.push(testCase(
+        tcId(tcNum++),
+        `Verify workflow actions in the "${esc(seg.name || seg.code)}" stage`,
+        roles[0] ? (roles[0].name || roles[0].code) : 'Workflow Participant',
+        'High',
+        `A test record exists in the <strong>${esc(seg.name || seg.code)}</strong> stage.`,
+        steps
+      ));
+    }
+  }
+
+  // ── SECTION D: Role-Based Access ──────────────────────────────────────────
+  if (roles.length > 0) {
+    parts.push(section('D. Role-Based Access Control', `${roles.length} roles`, ''));
+
+    for (const role of roles) {
+      const roleName = role.name || role.code;
+      const canEdit = role.editObjects;
+      const canDelete = role.deleteObjects;
+      const isSuperuser = role.superuser;
+      const canSearch = role.allowSearch;
+
+      const steps = [
+        { action: `Log in as a user assigned to the <strong>${esc(roleName)}</strong> role`, data: '[Test account credentials for this role]', expected: 'Login succeeds; user sees the module in their navigation' },
+        { action: `Navigate to the ${esc(m.name)} module`, data: '—', expected: canSearch !== false ? 'Module is accessible; record list is visible' : 'Module may not be visible or search is restricted' },
+      ];
+
+      if (canEdit) {
+        steps.push({ action: 'Open a record and attempt to edit a field', data: '[Valid test value]', expected: 'Fields are editable and changes can be saved' });
+      } else {
+        steps.push({ action: 'Open a record and attempt to edit a field', data: '—', expected: 'Fields are read-only; no save action is available to this role' });
+      }
+
+      if (canDelete) {
+        steps.push({ action: 'Attempt to delete a test record (use a throwaway record)', data: '—', expected: 'Delete action is available and executes successfully' });
+      } else {
+        steps.push({ action: 'Verify that the delete action is not available', data: '—', expected: 'No delete button or link is present for this role' });
+      }
+
+      if (isSuperuser) {
+        steps.push({ action: 'Verify superuser capabilities: access all records regardless of assignment', data: '—', expected: 'All records are visible and manageable' });
+      }
+
+      parts.push(testCase(
+        tcId(tcNum++),
+        `Verify access and permissions for the "${esc(roleName)}" role`,
+        roleName,
+        'High',
+        `A test user account is available with only the <strong>${esc(roleName)}</strong> role assigned.`,
+        steps
+      ));
+    }
+  }
+
+  // ── SECTION E: Business Rule Validation ───────────────────────────────────
+  const rqRules = rules.filter(r => r.targets.some(t => t.targetType === 'RQ'));
+  const inRules  = rules.filter(r => r.targets.some(t => t.targetType === 'IN'));
+  const nmRules  = rules.filter(r => r.targets.some(t => t.targetType === 'NM'));
+
+  if (rqRules.length + inRules.length + nmRules.length > 0) {
+    parts.push(section('E. Business Rule Validation', `${rules.length} rules`, ''));
+
+    // Required rules
+    for (const r of rqRules.slice(0, 5)) {
+      const targets = r.targets.filter(t => t.targetType === 'RQ');
+      const fieldPrompts = targets.map(t => {
+        const f = fields.find(fi => fi.code === t.targetCode);
+        return f ? esc(f.prompt || f.subCode || t.targetCode) : esc(t.targetCode);
+      });
+
+      parts.push(testCase(
+        tcId(tcNum++),
+        `Verify that rule "${esc(r.name || r.code)}" enforces required fields when condition is met`,
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'High',
+        `Condition: <code class="ts-inline-code">${esc(r.condition || 'see rule logic')}</code>`,
+        [
+          { action: 'Open a record (or create a new one) where the rule condition is true', data: '[Set up data to satisfy the rule condition]', expected: 'Rule condition is active' },
+          { action: `Verify that the following field(s) show as required: <strong>${fieldPrompts.join(', ')}</strong>`, data: '—', expected: 'Required indicator (e.g., asterisk or highlight) is visible on each field' },
+          { action: 'Attempt to save without completing these fields', data: '(leave required fields empty)', expected: 'Save is blocked; validation message references the required field(s)' },
+          { action: 'Complete all required fields and save', data: '[Valid values for each required field]', expected: 'Save succeeds' },
+          { action: 'Set up a record where the rule condition is FALSE', data: '[Data that does NOT satisfy the rule condition]', expected: `Field(s) are no longer required; save succeeds without filling ${fieldPrompts.join(', ')}` },
+        ]
+      ));
+    }
+
+    // Invisible (IN) rules
+    for (const r of inRules.slice(0, 3)) {
+      const targets = r.targets.filter(t => t.targetType === 'IN');
+      const fieldPrompts = targets.map(t => {
+        const f = fields.find(fi => fi.code === t.targetCode);
+        return f ? esc(f.prompt || f.subCode || t.targetCode) : esc(t.targetCode);
+      });
+
+      parts.push(testCase(
+        tcId(tcNum++),
+        `Verify that rule "${esc(r.name || r.code)}" hides fields when condition is met`,
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'Medium',
+        `Condition: <code class="ts-inline-code">${esc(r.condition || 'see rule logic')}</code>`,
+        [
+          { action: 'Open a record where the rule condition is TRUE', data: '[Data satisfying the condition]', expected: 'Rule fires' },
+          { action: `Verify that field(s) <strong>${fieldPrompts.join(', ')}</strong> are NOT visible on the form`, data: '—', expected: 'Field(s) are hidden / not rendered on screen' },
+          { action: 'Set up a record where the rule condition is FALSE', data: '[Data NOT satisfying the condition]', expected: `Field(s) ${fieldPrompts.join(', ')} become visible` },
+        ]
+      ));
+    }
+
+    // Non-Modifiable (NM) rules
+    for (const r of nmRules.slice(0, 3)) {
+      const targets = r.targets.filter(t => t.targetType === 'NM');
+      const fieldPrompts = targets.map(t => {
+        const f = fields.find(fi => fi.code === t.targetCode);
+        return f ? esc(f.prompt || f.subCode || t.targetCode) : esc(t.targetCode);
+      });
+
+      parts.push(testCase(
+        tcId(tcNum++),
+        `Verify that rule "${esc(r.name || r.code)}" makes fields read-only when condition is met`,
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'Medium',
+        `Condition: <code class="ts-inline-code">${esc(r.condition || 'see rule logic')}</code>`,
+        [
+          { action: 'Open a record where the rule condition is TRUE', data: '[Data satisfying the condition]', expected: 'Rule fires' },
+          { action: `Attempt to edit field(s): <strong>${fieldPrompts.join(', ')}</strong>`, data: '—', expected: 'Field(s) are locked / grayed out; input is not accepted' },
+          { action: 'Set up a record where the rule condition is FALSE', data: '[Data NOT satisfying the condition]', expected: `Field(s) ${fieldPrompts.join(', ')} become editable` },
+        ]
+      ));
+    }
+  }
+
+  // ── SECTION F: Field Validation ───────────────────────────────────────────
+  const plFields = fields.filter(f => f.picklist && f.picklist.length > 0);
+  const refFields = fields.filter(f => f.type === 'R');
+  const numFields = fields.filter(f => f.type === 'N');
+  const dateFields = fields.filter(f => f.type === 'D');
+
+  if (plFields.length + refFields.length + numFields.length + dateFields.length > 0) {
+    parts.push(section('F. Field Validation', '', ''));
+
+    // Picklist fields
+    if (plFields.length > 0) {
+      const sample = plFields.slice(0, 3);
+      parts.push(testCase(
+        tcId(tcNum++),
+        'Verify that picklist fields display correct values and accept only valid selections',
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'Medium',
+        'Open a record in edit mode.',
+        sample.flatMap(f => [
+          {
+            action: `Click the <strong>${esc(f.prompt || f.subCode)}</strong> picklist`,
+            data: '—',
+            expected: `Dropdown shows exactly these options: <em>${f.picklist.map(v => esc(v.label || v.value)).join(', ')}</em>`,
+          },
+          {
+            action: `Select each value in turn and save`,
+            data: f.picklist.slice(0, 2).map(v => esc(v.label || v.value)).join(', '),
+            expected: 'Selected value is saved and displayed correctly',
+          },
+        ])
+      ));
+    }
+
+    // Reference fields
+    if (refFields.length > 0) {
+      parts.push(testCase(
+        tcId(tcNum++),
+        'Verify that reference fields link correctly to related module records',
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'Medium',
+        'At least one record exists in each referenced module.',
+        refFields.slice(0, 3).flatMap(f => [
+          {
+            action: `Click the search/lookup icon for <strong>${esc(f.prompt || f.subCode)}</strong>`,
+            data: '—',
+            expected: 'Reference search dialog opens; related records are listed',
+          },
+          {
+            action: 'Select a valid related record',
+            data: '[Existing record from the related module]',
+            expected: 'Selected record populates the reference field; linked record details display correctly',
+          },
+        ])
+      ));
+    }
+
+    // Numeric fields
+    if (numFields.length > 0) {
+      parts.push(testCase(
+        tcId(tcNum++),
+        'Verify that numeric fields reject non-numeric input',
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'Low',
+        'Open a record with numeric fields in edit mode.',
+        numFields.slice(0, 2).flatMap(f => [
+          {
+            action: `Enter a valid number in <strong>${esc(f.prompt || f.subCode)}</strong>`,
+            data: '42',
+            expected: 'Value is accepted and saved',
+          },
+          {
+            action: `Enter alphabetic text in <strong>${esc(f.prompt || f.subCode)}</strong>`,
+            data: 'abc',
+            expected: 'Input is blocked or validation error is shown',
+          },
+        ])
+      ));
+    }
+
+    // Date fields
+    if (dateFields.length > 0) {
+      parts.push(testCase(
+        tcId(tcNum++),
+        'Verify that date fields accept valid dates and reject invalid formats',
+        roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User',
+        'Low',
+        'Open a record with date fields in edit mode.',
+        dateFields.slice(0, 2).flatMap(f => [
+          {
+            action: `Enter a valid date in <strong>${esc(f.prompt || f.subCode)}</strong>`,
+            data: '[Today\'s date in system format]',
+            expected: 'Date is accepted and saved correctly',
+          },
+          {
+            action: `Enter an invalid date string in <strong>${esc(f.prompt || f.subCode)}</strong>`,
+            data: '99/99/9999',
+            expected: 'Input is rejected or validation error shown',
+          },
+        ])
+      ));
+    }
+  }
+
+  // ── Sign-off Page ──────────────────────────────────────────────────────────
+  parts.push(`<div class="pb"></div>`);
+  parts.push(section('Test Execution Sign-Off', '', `
+    <div class="ts-signoff">
+      <p style="margin-bottom:16px;color:#475569;font-size:9pt;">
+        Complete the summary below after all test cases have been executed. Attach this document to the project's UAT record or defect tracker.
+      </p>
+      <table class="ts-summary-table">
+        <thead><tr><th>Metric</th><th>Count</th></tr></thead>
+        <tbody>
+          <tr><td>Total Test Cases</td><td></td></tr>
+          <tr><td>Passed</td><td></td></tr>
+          <tr><td>Failed</td><td></td></tr>
+          <tr><td>Blocked</td><td></td></tr>
+          <tr><td>Not Applicable</td><td></td></tr>
+          <tr><td>Defects Logged</td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="ts-signoff-grid">
+        <div class="ts-signoff-block">
+          <div class="ts-signoff-label">Tester Signature</div>
+          <div class="ts-signoff-line"></div>
+          <div class="ts-signoff-sublabel">Name / Date</div>
+        </div>
+        <div class="ts-signoff-block">
+          <div class="ts-signoff-label">Test Lead / Reviewer</div>
+          <div class="ts-signoff-line"></div>
+          <div class="ts-signoff-sublabel">Name / Date</div>
+        </div>
+        <div class="ts-signoff-block">
+          <div class="ts-signoff-label">UAT Approval</div>
+          <div class="ts-signoff-line"></div>
+          <div class="ts-signoff-sublabel">Name / Date / Decision</div>
+        </div>
+      </div>
+      <div class="ts-comments-box">
+        <div class="ts-comments-label">Notes / Outstanding Issues</div>
+      </div>
+    </div>`));
+
+  return parts.join('');
+}
+
+// ─── Test case builder ────────────────────────────────────────────────────────
+
+function testCase(id, objective, role, priority, precondition, steps) {
+  const PRIORITY_COLOR = { High: 'red', Medium: 'yellow', Low: 'green' };
+  const color = PRIORITY_COLOR[priority] || 'gray';
+
+  const stepRows = steps.map((s, i) => `
+    <tr>
+      <td class="ts-step-num">${i + 1}</td>
+      <td class="ts-step-action">${s.action}</td>
+      <td class="ts-step-data">${s.data}</td>
+      <td class="ts-step-expected">${s.expected}</td>
+      <td class="ts-step-actual"></td>
+      <td class="ts-step-status">
+        <div class="ts-status-check">☐ Pass<br>☐ Fail<br>☐ Blocked<br>☐ N/A</div>
+      </td>
+    </tr>`).join('');
+
+  return `
+<div class="ts-card">
+  <div class="ts-card-header">
+    <div class="ts-card-id">${esc(id)}</div>
+    <div class="ts-card-obj">${objective}</div>
+    <div class="ts-card-meta">
+      ${badge(priority, color)}
+      ${role ? `<span class="ts-role-badge">${esc(role)}</span>` : ''}
+    </div>
+  </div>
+  <div class="ts-card-precond">
+    <span class="ts-precond-label">Precondition:</span> ${precondition}
+  </div>
+  <table class="ts-steps-table">
+    <thead>
+      <tr>
+        <th style="width:30px">#</th>
+        <th style="width:28%">Action / Step</th>
+        <th style="width:18%">Test Data</th>
+        <th style="width:24%">Expected Result</th>
+        <th style="width:18%">Actual Result</th>
+        <th style="width:80px">Status</th>
+      </tr>
+    </thead>
+    <tbody>${stepRows}</tbody>
+  </table>
+</div>`;
 }
 
 module.exports = { generateAllPDFs };
