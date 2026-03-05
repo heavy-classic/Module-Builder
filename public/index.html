@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevonWay Module PDF Generator</title>
+<style>
+  :root {
+    --navy: #1B3A6B;
+    --navy-dark: #0F2447;
+    --blue: #0073E6;
+    --blue-light: #EBF3FD;
+    --blue-mid: #CCDFF7;
+    --border: #D1E0F7;
+    --text: #1A202C;
+    --muted: #64748B;
+    --white: #FFFFFF;
+    --green: #059669;
+    --red: #DC2626;
+    --radius: 10px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.10);
+    --shadow-lg: 0 12px 48px rgba(0,0,0,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    background: #F0F4FB;
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 50%, #1a5fb4 100%);
+    color: white;
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--blue);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    opacity: 0.55;
+    font-weight: 500;
+    display: block;
+    margin-top: -2px;
+  }
+
+  .header-badge {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Main layout ── */
+  main {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  .hero {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .hero-title {
+    font-size: 32px;
+    font-weight: 900;
+    color: var(--navy);
+    letter-spacing: -0.5px;
+    margin-bottom: 10px;
+  }
+
+  .hero-sub {
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ── Upload card ── */
+  .upload-card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+
+  /* ── Drop zone ── */
+  #drop-zone {
+    border: 2.5px dashed var(--border);
+    border-radius: 12px;
+    margin: 28px;
+    padding: 52px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--blue-light);
+    position: relative;
+  }
+
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: var(--blue);
+    background: #DCEEFd;
+    transform: scale(1.005);
+  }
+
+  #drop-zone.drag-over {
+    box-shadow: 0 0 0 4px rgba(0,115,230,0.15);
+  }
+
+  .drop-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+    filter: grayscale(0.3);
+  }
+
+  .drop-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+
+  .drop-sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+
+  .browse-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--blue);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .browse-btn:hover { background: #005BC5; }
+
+  .file-types {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .file-type {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--navy);
+    letter-spacing: 0.05em;
+  }
+
+  #file-input { display: none; }
+
+  /* ── Doc types preview ── */
+  .doc-preview {
+    padding: 0 28px 28px;
+  }
+
+  .doc-preview-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .doc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .doc-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--blue-light);
+    border: 1px solid var(--blue-mid);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+
+  /* ── Processing state ── */
+  #processing {
+    display: none;
+    padding: 60px 32px;
+    text-align: center;
+  }
+
+  .spinner-wrap {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 24px;
+    position: relative;
+  }
+
+  .spinner {
+    width: 72px;
+    height: 72px;
+    border: 4px solid var(--blue-light);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .spinner-inner {
+    position: absolute;
+    top: 10px; left: 10px;
+    width: 52px; height: 52px;
+    border: 3px solid transparent;
+    border-top-color: var(--navy);
+    border-radius: 50%;
+    animation: spin 1.4s linear infinite reverse;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .processing-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+
+  .processing-sub {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .processing-steps {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    transition: color 0.3s;
+  }
+
+  .step.active { color: var(--blue); font-weight: 700; }
+  .step.done { color: var(--green); }
+
+  .step-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+
+  .step.active .step-dot { background: var(--blue); }
+  .step.done .step-dot { background: var(--green); }
+
+  /* ── Results ── */
+  #results {
+    display: none;
+    margin-top: 32px;
+  }
+
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .results-info h2 {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--navy);
+  }
+
+  .results-info p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .download-all-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--navy);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .download-all-btn:hover {
+    background: var(--navy-dark);
+    transform: translateY(-1px);
+  }
+
+  .pdf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+
+  .pdf-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+
+  .pdf-card:hover {
+    box-shadow: var(--shadow);
+    transform: translateY(-2px);
+  }
+
+  .pdf-card-top {
+    background: linear-gradient(135deg, var(--navy), #2D5AA0);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .pdf-card-top::after {
+    content: '';
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.07);
+  }
+
+  .pdf-num {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 4px;
+  }
+
+  .pdf-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: white;
+  }
+
+  .pdf-card-body {
+    padding: 14px 16px;
+  }
+
+  .pdf-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 14px;
+    min-height: 36px;
+  }
+
+  .pdf-download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    background: var(--blue-light);
+    color: var(--blue);
+    border: 1.5px solid var(--blue-mid);
+    border-radius: 7px;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .pdf-download-btn:hover {
+    background: #CCDFF7;
+    border-color: var(--blue);
+  }
+
+  /* ── Try again / error ── */
+  .try-again {
+    margin-top: 20px;
+    text-align: center;
+  }
+
+  .try-again-btn {
+    background: none;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .try-again-btn:hover {
+    border-color: var(--navy);
+    color: var(--navy);
+  }
+
+  #error-box {
+    display: none;
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-left: 4px solid var(--red);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-top: 20px;
+    color: #991B1B;
+    font-size: 13px;
+  }
+
+  /* ── Module info bar ── */
+  .module-bar {
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .module-bar-icon { font-size: 20px; }
+
+  .module-bar-name {
+    font-weight: 800;
+    color: #065F46;
+    font-size: 15px;
+  }
+
+  .module-bar-prefix {
+    background: #065F46;
+    color: white;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">📄</div>
+    <div>
+      <div class="logo-text">Module PDF Generator</div>
+      <span class="logo-sub">DevonWay Documentation Tools</span>
+    </div>
+  </div>
+  <div class="header-badge">6 Documents Generated</div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1 class="hero-title">Turn a Module Definition<br>into Beautiful Documentation</h1>
+    <p class="hero-sub">Upload your DevonWay module export and instantly generate a full set of professional PDF reference documents.</p>
+  </div>
+
+  <div class="upload-card">
+    <div id="upload-section">
+      <div id="drop-zone">
+        <span class="drop-icon">📦</span>
+        <div class="drop-title">Drop your module file here</div>
+        <p class="drop-sub">Supports DevonWay module exports in XML or ZIP format</p>
+        <button class="browse-btn" onclick="document.getElementById('file-input').click()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 4v16m8-8H4"/></svg>
+          Choose File
+        </button>
+        <div class="file-types">
+          <span class="file-type">.XML</span>
+          <span class="file-type">.ZIP</span>
+        </div>
+        <input type="file" id="file-input" accept=".xml,.zip">
+      </div>
+
+      <div class="doc-preview">
+        <div class="doc-preview-label">Documents that will be generated</div>
+        <div class="doc-chips">
+          <div class="doc-chip">📋 Module Overview</div>
+          <div class="doc-chip">📖 Data Dictionary</div>
+          <div class="doc-chip">🔄 Workflow Guide</div>
+          <div class="doc-chip">⚙️ Rules &amp; Behaviors</div>
+          <div class="doc-chip">🗂️ Layout Reference</div>
+          <div class="doc-chip">🔒 Security Reference</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="processing">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <div class="spinner-inner"></div>
+      </div>
+      <div class="processing-title">Generating your documentation…</div>
+      <div class="processing-sub">This usually takes 20–40 seconds</div>
+      <div class="processing-steps">
+        <div class="step" id="step-parse"><div class="step-dot"></div>Parsing module</div>
+        <div class="step" id="step-gen"><div class="step-dot"></div>Building PDFs</div>
+        <div class="step" id="step-pack"><div class="step-dot"></div>Packaging files</div>
+      </div>
+    </div>
+
+    <div id="error-box"></div>
+  </div>
+
+  <div id="results">
+    <div class="results-header">
+      <div class="results-info">
+        <h2>Your Documentation is Ready</h2>
+        <p id="results-sub">Download individual PDFs or get them all at once.</p>
+      </div>
+      <a id="download-all-btn" class="download-all-btn" href="#" download>
+        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>
+        Download All (ZIP)
+      </a>
+    </div>
+    <div id="module-bar" class="module-bar" style="display:none;">
+      <span class="module-bar-icon">✅</span>
+      <span id="module-bar-name" class="module-bar-name"></span>
+      <span id="module-bar-prefix" class="module-bar-prefix"></span>
+    </div>
+    <div id="pdf-grid" class="pdf-grid"></div>
+    <div class="try-again">
+      <button class="try-again-btn" onclick="resetUI()">Upload a Different Module</button>
+    </div>
+  </div>
+</main>
+
+<footer>DevonWay Module PDF Generator — Upload your module, get instant documentation</footer>
+
+<script>
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const uploadSection = document.getElementById('upload-section');
+  const processing = document.getElementById('processing');
+  const results = document.getElementById('results');
+  const errorBox = document.getElementById('error-box');
+
+  // ── Drag & drop ──
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.querySelector('.browse-btn').addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+  // ── Upload & process ──
+  async function handleFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'xml' && ext !== 'zip') {
+      showError('Please upload an .xml or .zip module export file.');
+      return;
+    }
+
+    showProcessing();
+
+    const formData = new FormData();
+    formData.append('module', file);
+
+    // Animate steps
+    setTimeout(() => setStep('step-parse', 'active'), 200);
+    setTimeout(() => { setStep('step-parse', 'done'); setStep('step-gen', 'active'); }, 3000);
+    setTimeout(() => { setStep('step-gen', 'done'); setStep('step-pack', 'active'); }, 18000);
+
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Processing failed.');
+
+      setStep('step-pack', 'done');
+      showResults(data);
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  function setStep(id, state) {
+    const el = document.getElementById(id);
+    el.className = 'step ' + state;
+  }
+
+  // ── UI states ──
+  function showProcessing() {
+    errorBox.style.display = 'none';
+    uploadSection.style.display = 'none';
+    processing.style.display = 'block';
+    results.style.display = 'none';
+    ['step-parse','step-gen','step-pack'].forEach(id => setStep(id, ''));
+  }
+
+  function showResults(data) {
+    processing.style.display = 'none';
+    results.style.display = 'block';
+
+    document.getElementById('results-sub').textContent =
+      `Generated ${data.files.length} documents from your module export.`;
+
+    // Module bar
+    if (data.moduleName) {
+      const bar = document.getElementById('module-bar');
+      document.getElementById('module-bar-name').textContent = data.moduleName;
+      if (data.modulePrefix) {
+        document.getElementById('module-bar-prefix').textContent = data.modulePrefix;
+      }
+      bar.style.display = 'flex';
+    }
+
+    // Download all button
+    const dlAll = document.getElementById('download-all-btn');
+    dlAll.href = `/download-all/${data.sessionId}`;
+    dlAll.removeAttribute('download');
+
+    // PDF cards
+    const grid = document.getElementById('pdf-grid');
+    grid.innerHTML = '';
+    data.files.forEach((file, i) => {
+      const card = document.createElement('div');
+      card.className = 'pdf-card';
+      card.innerHTML = `
+        <div class="pdf-card-top">
+          <div class="pdf-num">DOCUMENT ${String(i + 1).padStart(2, '0')}</div>
+          <div class="pdf-title">${escHtml(file.title)}</div>
+        </div>
+        <div class="pdf-card-body">
+          <div class="pdf-desc">${escHtml(file.description)}</div>
+          <a class="pdf-download-btn" href="/download/${data.sessionId}/${encodeURIComponent(file.name)}">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>
+            Download PDF
+          </a>
+        </div>`;
+      grid.appendChild(card);
+    });
+  }
+
+  function showError(msg) {
+    processing.style.display = 'none';
+    uploadSection.style.display = 'block';
+    errorBox.style.display = 'block';
+    errorBox.textContent = '⚠ ' + msg;
+  }
+
+  function resetUI() {
+    results.style.display = 'none';
+    errorBox.style.display = 'none';
+    uploadSection.style.display = 'block';
+    fileInput.value = '';
+  }
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
