@@ -1,6 +1,6 @@
 const { Resend } = require('resend');
 
-const NOTIFY_TO = 'matt.sacks@invokeinc.com';
+const NOTIFY_TO = 'mattsacks@yahoo.com';
 
 let client = null;
 
