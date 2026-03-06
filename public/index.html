@@ -808,6 +808,7 @@
     uploadSection.style.display = 'block';
     errorBox.style.display = 'block';
     errorBox.textContent = '⚠ ' + msg;
+    fileInput.value = '';  // reset so the same file can be re-selected after fixing the error
   }
 
   function resetUI() {
