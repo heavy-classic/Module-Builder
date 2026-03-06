@@ -177,14 +177,21 @@ function buildOverview(data, customerContext = {}) {
   const { metadata: m, statistics: s, fields, workflow, roles, developerNotes } = data;
   const parts = [];
 
-  // Customer deployment context box
+  // Customer deployment context box — rich version
   if (customerContext.name) {
+    const benefitsList = Array.isArray(customerContext.operationalBenefits) && customerContext.operationalBenefits.length > 0
+      ? `<div class="ccb-benefits-label">Key Benefits for ${esc(customerContext.name)}</div><ul class="ccb-benefits">${customerContext.operationalBenefits.map(b => `<li>${esc(b)}</li>`).join('')}</ul>`
+      : '';
+
     parts.push(`
 <div class="customer-context-box">
   <div class="ccb-label">Customer Deployment</div>
   <div class="ccb-name">${esc(customerContext.name)}</div>
-  ${customerContext.industry ? `<div class="ccb-industry">${esc(customerContext.industry)}</div>` : ''}
+  ${customerContext.industry ? `<div class="ccb-industry">${esc(customerContext.industry)}${customerContext.size ? ` · ${esc(customerContext.size)}` : ''}</div>` : ''}
   ${customerContext.description ? `<div class="ccb-desc">${esc(customerContext.description)}</div>` : ''}
+  ${customerContext.regulatoryContext ? `<div class="ccb-regulatory"><strong>Regulatory Context:</strong> ${esc(customerContext.regulatoryContext)}</div>` : ''}
+  ${customerContext.industryInsight ? `<div class="ccb-insight">${esc(customerContext.industryInsight)}</div>` : ''}
+  ${benefitsList}
   ${customerContext.moduleContext ? `<div class="ccb-module-context">${esc(customerContext.moduleContext)}</div>` : ''}
 </div>`);
   }
@@ -290,10 +297,10 @@ function buildDescription(data, customerContext = {}) {
 
   parts.push(descSection('What This Module Does', descIntro(data, customerContext)));
   parts.push(descSection('How Data Is Organized', descDataStructure(data)));
-  if (workflow.segments.length > 0) parts.push(descSection('How the Workflow Operates', descWorkflow(data)));
+  if (workflow.segments.length > 0) parts.push(descSection('How the Workflow Operates', descWorkflow(data, customerContext)));
   if (rules.length > 0) parts.push(descSection('Business Rules & Automated Behaviors', descRules(data)));
-  if (roles.length > 0) parts.push(descSection('Who Uses This Module', descRoles(data)));
-  parts.push(descSection('Notable Fields & Data Points', descKeyFields(data)));
+  if (roles.length > 0) parts.push(descSection('Who Uses This Module', descRoles(data, customerContext)));
+  parts.push(descSection('Notable Fields & Data Points', descKeyFields(data, customerContext)));
 
   return parts.join('');
 }
@@ -316,12 +323,17 @@ function descIntro(data, customerContext = {}) {
   const { metadata: m, statistics: s } = data;
   let html = '';
 
-  // Customer-specific opening
+  // Customer-specific opening — use rich whyThisModule narrative when available
   if (customerContext.name && customerContext.scraped) {
-    const industryPhrase = customerContext.industry ? ` As a <strong>${esc(customerContext.industry)}</strong> organization` : '';
-    html += `<p>${industryPhrase ? industryPhrase + ', ' : ''}<strong>${esc(customerContext.name)}</strong> is deploying this module as part of its DevonWay quality and compliance platform.${customerContext.description ? ' ' + esc(customerContext.description) : ''}</p>`;
-    if (customerContext.moduleContext) {
-      html += descCallout(`<strong>Why this module matters for ${esc(customerContext.name)}:</strong><br><br>${esc(customerContext.moduleContext)}`);
+    if (customerContext.whyThisModule) {
+      html += `<div class="desc-why-narrative">${safeHtml(customerContext.whyThisModule)}</div>`;
+    } else {
+      // Fallback: brief paragraph + moduleContext callout
+      const industryPhrase = customerContext.industry ? ` As a <strong>${esc(customerContext.industry)}</strong> organization` : '';
+      html += `<p>${industryPhrase ? industryPhrase + ', ' : ''}<strong>${esc(customerContext.name)}</strong> is deploying this module as part of its DevonWay quality and compliance platform.${customerContext.description ? ' ' + esc(customerContext.description) : ''}</p>`;
+      if (customerContext.moduleContext) {
+        html += descCallout(`<strong>Why this module matters for ${esc(customerContext.name)}:</strong><br><br>${esc(customerContext.moduleContext)}`);
+      }
     }
   } else if (customerContext.name) {
     html += `<p>This module has been configured for deployment at <strong>${esc(customerContext.name)}</strong> as part of their DevonWay quality and compliance platform implementation.</p>`;
@@ -430,10 +442,15 @@ function descDataStructure(data) {
   return html;
 }
 
-function descWorkflow(data) {
+function descWorkflow(data, customerContext = {}) {
   const { workflow, roles } = data;
   const { segments } = workflow;
   let html = '';
+
+  // Rich business context narrative — prepended before technical flow details
+  if (customerContext.workflowNarrative) {
+    html += `<div class="desc-workflow-narrative">${safeHtml(customerContext.workflowNarrative)}</div>`;
+  }
 
   const totalTasks = segments.reduce((n, s) => n + s.events.length, 0);
 
@@ -530,7 +547,7 @@ function descRules(data) {
   return html;
 }
 
-function descRoles(data) {
+function descRoles(data, customerContext = {}) {
   const { roles, workflow } = data;
   let html = '';
 
@@ -556,18 +573,32 @@ function descRoles(data) {
     const capText = caps.length > 0 ? `Users in this role can: <em>${caps.join(', ')}</em>.` : '';
     const restrictText = restrictions.length > 0 && caps.length < 2 ? ` Note: ${restrictions.join('; ')}.` : '';
 
+    // Look up customer-specific narrative for this role
+    const narrative = findRoleNarrative(customerContext.roleNarratives, name, role.code || '');
+
     html += `<div class="desc-role-card">
       <div class="desc-role-name">${esc(name)}</div>
-      <div class="desc-role-body">${capText}${restrictText}</div>
+      <div class="desc-role-body">
+        ${narrative ? `<div class="desc-role-narrative">${esc(narrative)}</div>` : ''}
+        ${capText}${restrictText}
+      </div>
     </div>`;
   }
 
   return html;
 }
 
-function descKeyFields(data) {
+function descKeyFields(data, customerContext = {}) {
   const { fields, statistics: s } = data;
   let html = '';
+
+  // Example records callout — concrete examples of what this customer will track
+  if (Array.isArray(customerContext.exampleRecords) && customerContext.exampleRecords.length > 0) {
+    const recordItems = customerContext.exampleRecords.map(r => `<li>${esc(r)}</li>`).join('');
+    html += descCallout(
+      `<strong>In the ${esc(customerContext.name || 'customer')} environment, this module will be used to track records such as:</strong><ul class="desc-list" style="margin-top:8px;">${recordItems}</ul>`
+    );
+  }
 
   // Identifying fields
   const identFields = fields.filter(f => f.identifying);
@@ -990,6 +1021,45 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
+// Inject Claude-authored HTML safely — escapes everything then re-allows <br>, <strong>, <em>
+function safeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+    .replace(/&lt;(\/?(strong|em))&gt;/gi, (m, tag) => `<${tag}>`);
+}
+
+// Match a role to a roleNarratives entry: exact name → exact code → word overlap
+function findRoleNarrative(roleNarratives, roleName, roleCode) {
+  if (!roleNarratives || typeof roleNarratives !== 'object') return null;
+  const entries = Object.entries(roleNarratives);
+  if (entries.length === 0) return null;
+
+  const normalize = s => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '');
+  const words = s => normalize(s).split(/\s+/).filter(Boolean);
+
+  // 1. Exact name match (case-insensitive)
+  const exactName = entries.find(([k]) => normalize(k) === normalize(roleName));
+  if (exactName) return exactName[1];
+
+  // 2. Exact code match
+  const exactCode = entries.find(([k]) => normalize(k) === normalize(roleCode));
+  if (exactCode) return exactCode[1];
+
+  // 3. Word overlap — use if at least 1 shared word
+  const roleWords = new Set(words(roleName));
+  let bestMatch = null;
+  let bestScore = 0;
+  for (const [k, v] of entries) {
+    const overlap = words(k).filter(w => roleWords.has(w)).length;
+    if (overlap > bestScore) { bestScore = overlap; bestMatch = v; }
+  }
+  return bestScore >= 1 ? bestMatch : null;
+}
+
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 
 function baseCSS() {
@@ -1168,6 +1238,13 @@ tr:nth-child(even) td { background: #F8FAFF; }
 .desc-role-card { border: 1px solid #D1E0F7; border-radius: 8px; margin-bottom: 10px; overflow: hidden; display: flex; }
 .desc-role-name { background: linear-gradient(135deg, #1B3A6B, #2D5AA0); color: white; padding: 12px 16px; font-weight: 800; font-size: 10pt; min-width: 160px; display: flex; align-items: center; }
 .desc-role-body { padding: 12px 16px; font-size: 9.5pt; line-height: 1.6; color: #1A202C; flex: 1; }
+.desc-role-narrative { font-style: italic; color: #2D5AA0; font-size: 9pt; line-height: 1.65; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #D1E0F7; }
+.desc-why-narrative { background: #F0F7FF; border: 1px solid #C3D9F5; border-left: 5px solid #1B3A6B; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 20px; font-size: 10pt; line-height: 1.75; color: #1A202C; }
+.desc-why-narrative p { margin: 0 0 12px 0; }
+.desc-why-narrative p:last-child { margin-bottom: 0; }
+.desc-workflow-narrative { background: #EBF3FD; border: 1px solid #D1E0F7; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 9.5pt; line-height: 1.75; color: #1A202C; }
+.desc-workflow-narrative p { margin: 0 0 10px 0; }
+.desc-workflow-narrative p:last-child { margin-bottom: 0; }
 
 /* ─ Customer context box ─ */
 .customer-context-box { background: linear-gradient(135deg, #EBF3FD, #F8FAFF); border: 1px solid #D1E0F7; border-left: 5px solid #1B3A6B; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px; }
@@ -1176,11 +1253,18 @@ tr:nth-child(even) td { background: #F8FAFF; }
 .ccb-industry { font-size: 9pt; color: #0073E6; font-weight: 600; margin-top: 2px; }
 .ccb-desc { font-size: 9pt; color: #475569; margin-top: 8px; line-height: 1.6; }
 .ccb-module-context { font-size: 9pt; color: #1A202C; margin-top: 10px; line-height: 1.65; padding-top: 10px; border-top: 1px solid #D1E0F7; font-style: italic; }
+.ccb-regulatory { font-size: 8.5pt; color: #1A202C; margin-top: 10px; line-height: 1.6; padding-top: 10px; border-top: 1px solid #D1E0F7; }
+.ccb-regulatory strong { color: #1B3A6B; }
+.ccb-insight { font-size: 8.5pt; color: #475569; font-style: italic; margin-top: 6px; line-height: 1.6; }
+.ccb-benefits-label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #64748B; margin-top: 12px; padding-top: 10px; border-top: 1px solid #D1E0F7; margin-bottom: 6px; }
+.ccb-benefits { margin: 0 0 0 16px; padding: 0; }
+.ccb-benefits li { font-size: 8.5pt; color: #1A202C; line-height: 1.65; margin-bottom: 4px; }
 
 /* ─ Test Scripts ─ */
 .ts-intro { background: linear-gradient(135deg, #EBF3FD, #F8FAFF); border: 1px solid #D1E0F7; border-left: 5px solid #0073E6; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px; }
 .ts-intro-title { font-size: 11pt; font-weight: 800; color: #1B3A6B; margin-bottom: 8px; }
 .ts-intro-body p { font-size: 9pt; color: #475569; margin-bottom: 10px; line-height: 1.6; }
+.ts-why-para { font-size: 9.5pt; color: #1A202C; line-height: 1.75; margin-bottom: 12px; }
 .ts-legend { display: flex; gap: 20px; flex-wrap: wrap; }
 .ts-legend-item { display: flex; align-items: center; gap: 6px; font-size: 8pt; color: #475569; }
 .ts-status { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.05em; }
@@ -1246,12 +1330,17 @@ function buildTestScripts(data, customerContext = {}) {
   const tcId = (n) => `${prefix}-TS-${String(n).padStart(3, '0')}`;
 
   // Intro / how to use
+  const whyParas = customerContext.whyThisModule ? customerContext.whyThisModule.split(/<br\s*\/?><br\s*\/?>/i) : [];
+  const introBody = whyParas.length > 0
+    ? `<p class="ts-why-para">${safeHtml(whyParas[0])}</p>${customerContext.regulatoryContext ? `<p><strong>Regulatory context:</strong> ${esc(customerContext.regulatoryContext)}</p>` : ''}`
+    : `<p>This document provides structured User Acceptance Testing (UAT) scenarios for the <strong>${esc(m.name)}</strong> module${customerContext.name ? ` as deployed at <strong>${esc(customerContext.name)}</strong>` : ''}.
+    Each test case follows a standard format: objective, prerequisites, step-by-step actions, expected results, and capture fields for actual results and pass/fail status.${customerContext.moduleContext ? ' ' + esc(customerContext.moduleContext) : ''}</p>`;
+
   parts.push(`
 <div class="ts-intro">
   <div class="ts-intro-title">How to Use This Test Script</div>
   <div class="ts-intro-body">
-    <p>This document provides structured User Acceptance Testing (UAT) scenarios for the <strong>${esc(m.name)}</strong> module${customerContext.name ? ` as deployed at <strong>${esc(customerContext.name)}</strong>` : ''}.
-    Each test case follows a standard format: objective, prerequisites, step-by-step actions, expected results, and capture fields for actual results and pass/fail status.${customerContext.moduleContext ? ' ' + esc(customerContext.moduleContext) : ''}</p>
+    ${introBody}
     <div class="ts-legend">
       <div class="ts-legend-item"><span class="ts-status ts-pass">PASS</span> Test completed successfully</div>
       <div class="ts-legend-item"><span class="ts-status ts-fail">FAIL</span> Actual result did not match expected</div>
@@ -1262,15 +1351,19 @@ function buildTestScripts(data, customerContext = {}) {
 </div>`);
 
   // ── SECTION A: Prerequisites ──────────────────────────────────────────────
+  const prereqRows = [
+    'Test environment is accessible and available',
+    `Tester has a valid DevonWay user account with access to the <strong>${esc(m.name)}</strong> module`,
+    ...(roles.length > 0 ? [`Test accounts are configured for the following roles: <strong>${roles.map(r => esc(r.name || r.code)).join(', ')}</strong>`] : []),
+    'Any reference modules linked from this module are populated with test data',
+    'Test execution log / defect tracker is open and ready',
+    ...(customerContext.regulatoryContext ? [`Tester is familiar with the applicable regulatory requirements: ${esc(customerContext.regulatoryContext)}`] : []),
+  ];
   parts.push(section('A. Test Prerequisites', '', `
     <table class="ts-prereq-table">
       <thead><tr><th>#</th><th>Prerequisite</th><th>Verified ✓</th></tr></thead>
       <tbody>
-        <tr><td>1</td><td>Test environment is accessible and available</td><td class="ts-check-col"></td></tr>
-        <tr><td>2</td><td>Tester has a valid DevonWay user account with access to the <strong>${esc(m.name)}</strong> module</td><td class="ts-check-col"></td></tr>
-        ${roles.length > 0 ? `<tr><td>3</td><td>Test accounts are configured for the following roles: <strong>${roles.map(r => esc(r.name || r.code)).join(', ')}</strong></td><td class="ts-check-col"></td></tr>` : ''}
-        <tr><td>${roles.length > 0 ? 4 : 3}</td><td>Any reference modules linked from this module are populated with test data</td><td class="ts-check-col"></td></tr>
-        <tr><td>${roles.length > 0 ? 5 : 4}</td><td>Test execution log / defect tracker is open and ready</td><td class="ts-check-col"></td></tr>
+        ${prereqRows.map((text, i) => `<tr><td>${i + 1}</td><td>${text}</td><td class="ts-check-col"></td></tr>`).join('\n        ')}
       </tbody>
     </table>
     <div class="ts-tester-block">
@@ -1293,18 +1386,24 @@ function buildTestScripts(data, customerContext = {}) {
   }
   const picklistFields = fields.filter(f => f.picklist && f.picklist.length > 0).slice(0, 5);
 
+  const exampleRecord0 = Array.isArray(customerContext.exampleRecords) && customerContext.exampleRecords.length > 0
+    ? customerContext.exampleRecords[0] : null;
+  const sectionBPrecondition = exampleRecord0
+    ? `User is logged in with a role that has permission to create records in this module. Example record type to create: <em>"${esc(exampleRecord0)}"</em>`
+    : 'User is logged in with a role that has permission to create records in this module.';
+
   parts.push(section('B. Record Creation', '', testCase(
     tcId(tcNum++),
     'Verify that a new module record can be successfully created with valid data',
     roles.find(r => r.canInitiate || r.allowInitiate) ? (roles.find(r => r.canInitiate || r.allowInitiate).name || 'Initiator Role') : (roles[0] ? (roles[0].name || roles[0].code) : 'Authorized User'),
     'High',
-    'User is logged in with a role that has permission to create records in this module.',
+    sectionBPrecondition,
     [
       { action: `Navigate to the ${esc(m.name)} module`, data: '—', expected: 'Module list view loads without errors' },
       { action: 'Click the button or link to create a new record (e.g., "New", "Add", "Initiate")', data: '—', expected: 'Blank record form opens' },
-      ...identFields.slice(0, 3).map(f => ({
+      ...identFields.slice(0, 3).map((f, fi) => ({
         action: `Enter a value in the <strong>${esc(f.prompt || f.name || f.subCode)}</strong> field`,
-        data: `[Provide valid ${esc(f.type)} test value]`,
+        data: fi === 0 && exampleRecord0 ? esc(exampleRecord0) : `[Provide valid ${esc(f.type)} test value]`,
         expected: `Field accepts the value and displays it correctly`,
       })),
       ...reqFields.slice(0, 4).map(f => ({
@@ -1384,12 +1483,29 @@ function buildTestScripts(data, customerContext = {}) {
         });
       }
 
+      // Find the role associated with this segment's events
+      const segRole = (() => {
+        for (const ev of events) {
+          if (ev.role || ev.roleCode) {
+            const r = roles.find(x => x.code === (ev.role || ev.roleCode) || x.name === (ev.role || ev.roleCode));
+            if (r) return r;
+          }
+        }
+        return roles[0] || null;
+      })();
+      const segRoleName = segRole ? (segRole.name || segRole.code) : 'Workflow Participant';
+      const segRoleNarrative = segRole
+        ? findRoleNarrative(customerContext.roleNarratives, segRole.name || '', segRole.code || '')
+        : null;
+      const segPrecondition = `A test record exists in the <strong>${esc(seg.name || seg.code)}</strong> stage.`
+        + (segRoleNarrative ? ` <em>${esc(segRoleNarrative)}</em>` : '');
+
       parts.push(testCase(
         tcId(tcNum++),
         `Verify workflow actions in the "${esc(seg.name || seg.code)}" stage`,
-        roles[0] ? (roles[0].name || roles[0].code) : 'Workflow Participant',
+        segRoleName,
         'High',
-        `A test record exists in the <strong>${esc(seg.name || seg.code)}</strong> stage.`,
+        segPrecondition,
         steps
       ));
     }
