@@ -14,7 +14,7 @@ function getClient() {
   return client;
 }
 
-async function sendUsageNotification({ moduleData, filename, fileSize, ip, userAgent }) {
+async function sendUsageNotification({ moduleData, filename, fileSize, ip, userAgent, customerName }) {
   const c = getClient();
   if (!c) return;
 
@@ -22,15 +22,16 @@ async function sendUsageNotification({ moduleData, filename, fileSize, ip, userA
   const s = moduleData.statistics;
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' });
 
-  console.log('[mailer] Sending notification for module:', m.name);
+  console.log('[mailer] Sending notification for module:', m.name, '— customer:', customerName || 'unknown');
 
-  const html = buildHtml({ m, s, filename, fileSize, ip, userAgent, now });
+  const html = buildHtml({ m, s, filename, fileSize, ip, userAgent, now, customerName });
 
+  const customerLabel = customerName ? ` for ${customerName}` : '';
   try {
     const { error } = await c.emails.send({
       from: 'Module PDF Generator <onboarding@resend.dev>',
       to: NOTIFY_TO,
-      subject: 'New module processed: ' + m.name + (m.prefix ? ' (' + m.prefix + ')' : ''),
+      subject: 'New module processed: ' + m.name + (m.prefix ? ' (' + m.prefix + ')' : '') + customerLabel,
       html,
     });
     if (error) {
@@ -43,13 +44,17 @@ async function sendUsageNotification({ moduleData, filename, fileSize, ip, userA
   }
 }
 
-function buildHtml({ m, s, filename, fileSize, ip, userAgent, now }) {
+function buildHtml({ m, s, filename, fileSize, ip, userAgent, now, customerName }) {
   return '<div style="font-family:-apple-system,\'Segoe UI\',sans-serif;max-width:560px;margin:0 auto;background:#f8faff;padding:24px;border-radius:12px;">' +
     '<div style="background:linear-gradient(135deg,#0F2447,#1B3A6B);border-radius:8px;padding:20px 24px;margin-bottom:20px;">' +
       '<div style="color:rgba(255,255,255,0.6);font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px;">Module PDF Generator</div>' +
       '<div style="color:white;font-size:20px;font-weight:800;">Someone Just Generated Docs</div>' +
       '<div style="color:rgba(255,255,255,0.65);font-size:13px;margin-top:4px;">' + esc(now) + ' ET</div>' +
     '</div>' +
+    (customerName ? '<div style="background:#EBF3FD;border:1px solid #D1E0F7;border-left:4px solid #1B3A6B;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;">' +
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748B;margin-bottom:4px;">Prepared For</div>' +
+      '<div style="font-size:18px;font-weight:800;color:#1B3A6B;">' + esc(customerName) + '</div>' +
+    '</div>' : '') +
     '<div style="background:white;border:1px solid #D1E0F7;border-radius:8px;padding:20px;margin-bottom:16px;">' +
       '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748B;margin-bottom:12px;">Module</div>' +
       '<div style="font-size:22px;font-weight:900;color:#1B3A6B;margin-bottom:6px;">' + esc(m.name) + '</div>' +

@@ -512,6 +512,45 @@
     letter-spacing: 0.05em;
   }
 
+  /* ── Customer name field ── */
+  .customer-field {
+    padding: 24px 28px 0;
+  }
+
+  .customer-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .customer-input {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--text);
+    background: white;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+  }
+
+  .customer-input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(0,115,230,0.12);
+  }
+
+  .customer-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
   /* ── Footer ── */
   footer {
     text-align: center;
@@ -542,6 +581,14 @@
 
   <div class="upload-card">
     <div id="upload-section">
+      <div class="customer-field">
+        <label class="customer-label" for="customer-name">Customer Name</label>
+        <input type="text" id="customer-name" class="customer-input"
+               placeholder="e.g. Pacific Gas and Electric"
+               autocomplete="organization">
+        <div class="customer-hint">Required — used to personalize every generated document</div>
+      </div>
+
       <div id="drop-zone">
         <span class="drop-icon">📦</span>
         <div class="drop-title">Drop your module file here</div>
@@ -578,9 +625,10 @@
         <div class="spinner-inner"></div>
       </div>
       <div class="processing-title">Generating your documentation…</div>
-      <div class="processing-sub">This usually takes 20–40 seconds</div>
+      <div class="processing-sub">This usually takes 30–60 seconds</div>
       <div class="processing-steps">
         <div class="step" id="step-parse"><div class="step-dot"></div>Parsing module</div>
+        <div class="step" id="step-research"><div class="step-dot"></div>Researching customer</div>
         <div class="step" id="step-gen"><div class="step-dot"></div>Building PDFs</div>
         <div class="step" id="step-pack"><div class="step-dot"></div>Packaging files</div>
       </div>
@@ -637,6 +685,12 @@
 
   // ── Upload & process ──
   async function handleFile(file) {
+    const customerName = document.getElementById('customer-name').value.trim();
+    if (!customerName) {
+      showError('Please enter the customer name before uploading.');
+      return;
+    }
+
     const ext = file.name.split('.').pop().toLowerCase();
     if (ext !== 'xml' && ext !== 'zip') {
       showError('Please upload an .xml or .zip module export file.');
@@ -648,6 +702,7 @@
 
     const formData = new FormData();
     formData.append('module', file);
+    formData.append('customerName', customerName);
 
     try {
       // Upload and get jobId immediately
@@ -657,10 +712,11 @@
 
       const { jobId } = uploadData;
       setStep('step-parse', 'done');
-      setStep('step-gen', 'active');
+      setStep('step-research', 'active');
 
-      // Poll for job completion
+      // Poll for job completion (research + PDF generation happen server-side)
       const result = await pollJob(jobId);
+      setStep('step-research', 'done');
       setStep('step-gen', 'done');
       setStep('step-pack', 'active');
 
@@ -700,7 +756,7 @@
     uploadSection.style.display = 'none';
     processing.style.display = 'block';
     results.style.display = 'none';
-    ['step-parse','step-gen','step-pack'].forEach(id => setStep(id, ''));
+    ['step-parse','step-research','step-gen','step-pack'].forEach(id => setStep(id, ''));
   }
 
   function showResults(data) {
@@ -759,6 +815,7 @@
     errorBox.style.display = 'none';
     uploadSection.style.display = 'block';
     fileInput.value = '';
+    document.getElementById('customer-name').value = '';
   }
 
   function escHtml(str) {

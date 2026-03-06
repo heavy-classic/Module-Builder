@@ -8,6 +8,7 @@ const archiver = require('archiver');
 const { parseModuleFile } = require('./src/parser');
 const { generateAllPDFs } = require('./src/pdfGenerator');
 const { sendUsageNotification } = require('./src/mailer');
+const { researchCustomer } = require('./src/researcher');
 
 const app = express();
 const upload = multer({
@@ -51,6 +52,9 @@ app.post('/upload', (req, res, next) => {
 }, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
 
+  const customerName = (req.body.customerName || '').trim();
+  if (!customerName) return res.status(400).json({ error: 'Customer name is required.' });
+
   const jobId = uuidv4();
   jobs[jobId] = { status: 'processing', createdAt: Date.now() };
 
@@ -61,19 +65,22 @@ app.post('/upload', (req, res, next) => {
   const userAgent = req.headers['user-agent'] || '';
 
   // Process in background
-  processJob(jobId, req.file, ip, userAgent).catch(err => {
+  processJob(jobId, req.file, ip, userAgent, customerName).catch(err => {
     console.error('Job failed:', err);
     jobs[jobId] = { ...jobs[jobId], status: 'error', error: err.message };
   });
 });
 
-async function processJob(jobId, file, ip, userAgent) {
-  console.log(`[${jobId}] Processing: ${file.originalname} (${(file.size / 1024).toFixed(1)} KB)`);
+async function processJob(jobId, file, ip, userAgent, customerName) {
+  console.log(`[${jobId}] Processing: ${file.originalname} (${(file.size / 1024).toFixed(1)} KB) for customer: ${customerName}`);
 
   const moduleData = await parseModuleFile(file.buffer, file.originalname);
   console.log(`[${jobId}] Parsed: ${moduleData.metadata.name} — ${moduleData.fields.length} fields, ${moduleData.workflow.tasks.length} tasks`);
 
-  const pdfs = await generateAllPDFs(moduleData);
+  const customerContext = await researchCustomer(customerName, moduleData.metadata.name);
+  console.log(`[${jobId}] Customer context: ${customerContext.scraped ? `researched (${customerContext.industry || 'unknown industry'})` : 'name-only fallback'}`);
+
+  const pdfs = await generateAllPDFs(moduleData, customerContext);
   console.log(`[${jobId}] Generated ${pdfs.length} PDFs`);
 
   const sessionId = uuidv4();
@@ -97,7 +104,7 @@ async function processJob(jobId, file, ip, userAgent) {
     files: files.map(f => ({ name: f.name, title: f.title, description: f.description })),
   };
 
-  sendUsageNotification({ moduleData, filename: file.originalname, fileSize: file.size, ip, userAgent });
+  sendUsageNotification({ moduleData, filename: file.originalname, fileSize: file.size, ip, userAgent, customerName });
 
   console.log(`[${jobId}] Done`);
 }

@@ -32,7 +32,7 @@ const DOC_TYPES = [
   { id: 'test-scripts',     title: 'Test Scripts',          description: 'UAT test cases for workflow, roles, rules, and field validation' },
 ];
 
-async function generateAllPDFs(data) {
+async function generateAllPDFs(data, customerContext = {}) {
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -48,7 +48,7 @@ async function generateAllPDFs(data) {
     const results = [];
     for (let i = 0; i < DOC_TYPES.length; i++) {
       const doc = DOC_TYPES[i];
-      const html = buildDocument(doc, data);
+      const html = buildDocument(doc, data, customerContext);
       const buffer = await renderPDF(browser, html);
       results.push({
         filename: `${String(i + 1).padStart(2, '0')}-${doc.id}.pdf`,
@@ -88,17 +88,17 @@ async function renderPDF(browser, html) {
 
 // ─── Document builder ─────────────────────────────────────────────────────────
 
-function buildDocument(doc, data) {
+function buildDocument(doc, data, customerContext = {}) {
   let bodyContent;
   switch (doc.id) {
-    case 'overview':        bodyContent = buildOverview(data); break;
-    case 'description':     bodyContent = buildDescription(data); break;
-    case 'data-dictionary': bodyContent = buildDataDictionary(data); break;
-    case 'workflow':        bodyContent = buildWorkflow(data); break;
-    case 'rules':           bodyContent = buildRules(data); break;
-    case 'layout':          bodyContent = buildLayout(data); break;
-    case 'security':        bodyContent = buildSecurity(data); break;
-    case 'test-scripts':    bodyContent = buildTestScripts(data); break;
+    case 'overview':        bodyContent = buildOverview(data, customerContext); break;
+    case 'description':     bodyContent = buildDescription(data, customerContext); break;
+    case 'data-dictionary': bodyContent = buildDataDictionary(data, customerContext); break;
+    case 'workflow':        bodyContent = buildWorkflow(data, customerContext); break;
+    case 'rules':           bodyContent = buildRules(data, customerContext); break;
+    case 'layout':          bodyContent = buildLayout(data, customerContext); break;
+    case 'security':        bodyContent = buildSecurity(data, customerContext); break;
+    case 'test-scripts':    bodyContent = buildTestScripts(data, customerContext); break;
     default:                bodyContent = '<p>Content unavailable.</p>';
   }
 
@@ -110,9 +110,9 @@ function buildDocument(doc, data) {
 <style>${baseCSS()}</style>
 </head>
 <body>
-${cover(data.metadata, doc.title)}
+${cover(data.metadata, doc.title, customerContext)}
 <div class="pb"></div>
-${pageHeader(data.metadata, doc.title)}
+${pageHeader(data.metadata, doc.title, customerContext)}
 ${bodyContent}
 </body>
 </html>`;
@@ -120,7 +120,7 @@ ${bodyContent}
 
 // ─── Cover page ───────────────────────────────────────────────────────────────
 
-function cover(meta, docTitle) {
+function cover(meta, docTitle, customerContext = {}) {
   const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   return `
 <div class="cover">
@@ -136,6 +136,12 @@ function cover(meta, docTitle) {
     <div class="circle c3"></div>
   </div>
   <div class="cover-bottom">
+    ${customerContext.name ? `
+    <div class="cover-customer">
+      <div class="cover-customer-label">Prepared For</div>
+      <div class="cover-customer-name">${esc(customerContext.name)}</div>
+      ${customerContext.industry ? `<div class="cover-customer-industry">${esc(customerContext.industry)}</div>` : ''}
+    </div>` : ''}
     <div class="cover-meta">
       ${meta.prefix ? metaChip('Prefix', meta.prefix) : ''}
       ${meta.category ? metaChip('Category', meta.category) : ''}
@@ -153,12 +159,13 @@ function metaChip(label, value) {
 
 // ─── Page header (after cover) ────────────────────────────────────────────────
 
-function pageHeader(meta, docTitle) {
+function pageHeader(meta, docTitle, customerContext = {}) {
   return `
 <div class="page-header">
   <div>
     <div class="ph-doc-type">${esc(docTitle)}</div>
     <div class="ph-module">${esc(meta.name)}</div>
+    ${customerContext.name ? `<div class="ph-customer">Prepared for ${esc(customerContext.name)}</div>` : ''}
   </div>
   ${meta.prefix ? `<div class="ph-prefix">${esc(meta.prefix)}</div>` : ''}
 </div>`;
@@ -166,9 +173,21 @@ function pageHeader(meta, docTitle) {
 
 // ─── Content builders ─────────────────────────────────────────────────────────
 
-function buildOverview(data) {
+function buildOverview(data, customerContext = {}) {
   const { metadata: m, statistics: s, fields, workflow, roles, developerNotes } = data;
   const parts = [];
+
+  // Customer deployment context box
+  if (customerContext.name) {
+    parts.push(`
+<div class="customer-context-box">
+  <div class="ccb-label">Customer Deployment</div>
+  <div class="ccb-name">${esc(customerContext.name)}</div>
+  ${customerContext.industry ? `<div class="ccb-industry">${esc(customerContext.industry)}</div>` : ''}
+  ${customerContext.description ? `<div class="ccb-desc">${esc(customerContext.description)}</div>` : ''}
+  ${customerContext.moduleContext ? `<div class="ccb-module-context">${esc(customerContext.moduleContext)}</div>` : ''}
+</div>`);
+  }
 
   // Key stats
   parts.push(section('Module At a Glance', '', `
@@ -253,7 +272,7 @@ function buildOverview(data) {
   return parts.join('');
 }
 
-function buildDescription(data) {
+function buildDescription(data, customerContext = {}) {
   const { metadata: m, fields, workflow, roles, rules, regions, levels, statistics: s } = data;
   const parts = [];
 
@@ -269,7 +288,7 @@ function buildDescription(data) {
   ${descStat(s.totalRegions, 'Screen Regions')}
 </div>`);
 
-  parts.push(descSection('What This Module Does', descIntro(data)));
+  parts.push(descSection('What This Module Does', descIntro(data, customerContext)));
   parts.push(descSection('How Data Is Organized', descDataStructure(data)));
   if (workflow.segments.length > 0) parts.push(descSection('How the Workflow Operates', descWorkflow(data)));
   if (rules.length > 0) parts.push(descSection('Business Rules & Automated Behaviors', descRules(data)));
@@ -293,9 +312,20 @@ function descCallout(text) {
   return `<div class="desc-callout">${text}</div>`;
 }
 
-function descIntro(data) {
+function descIntro(data, customerContext = {}) {
   const { metadata: m, statistics: s } = data;
   let html = '';
+
+  // Customer-specific opening
+  if (customerContext.name && customerContext.scraped) {
+    const industryPhrase = customerContext.industry ? ` As a <strong>${esc(customerContext.industry)}</strong> organization` : '';
+    html += `<p>${industryPhrase ? industryPhrase + ', ' : ''}<strong>${esc(customerContext.name)}</strong> is deploying this module as part of its DevonWay quality and compliance platform.${customerContext.description ? ' ' + esc(customerContext.description) : ''}</p>`;
+    if (customerContext.moduleContext) {
+      html += descCallout(`<strong>Why this module matters for ${esc(customerContext.name)}:</strong><br><br>${esc(customerContext.moduleContext)}`);
+    }
+  } else if (customerContext.name) {
+    html += `<p>This module has been configured for deployment at <strong>${esc(customerContext.name)}</strong> as part of their DevonWay quality and compliance platform implementation.</p>`;
+  }
 
   const categoryDesc = m.category ? ` in the <strong>${esc(m.category)}</strong> category` : '';
   const prefixDesc = m.prefix
@@ -580,9 +610,13 @@ function descKeyFields(data) {
   return html;
 }
 
-function buildDataDictionary(data) {
+function buildDataDictionary(data, customerContext = {}) {
   const { fields, levels } = data;
   const parts = [];
+
+  if (customerContext.name) {
+    parts.push(`<p style="color:#64748B;font-size:9pt;margin-bottom:20px;">Field definitions documented as configured for the <strong>${esc(customerContext.name)}</strong> implementation of the <strong>${esc(data.metadata.name)}</strong> module.</p>`);
+  }
 
   if (fields.length === 0) {
     return emptyState('No Fields Found', 'No field definitions were detected in this module export.');
@@ -668,7 +702,7 @@ function buildDataDictionary(data) {
   return parts.join('');
 }
 
-function buildWorkflow(data) {
+function buildWorkflow(data, customerContext = {}) {
   const { workflow, metadata: m } = data;
   const parts = [];
 
@@ -678,6 +712,10 @@ function buildWorkflow(data) {
     return emptyState('No Workflow Configured', m.workflowFlag
       ? 'Workflow is enabled but no tasks were found in this export.'
       : 'This module does not use workflow. It is a non-workflow data module.');
+  }
+
+  if (customerContext.name) {
+    parts.push(`<p style="color:#64748B;font-size:9pt;margin-bottom:20px;">The following workflow configuration has been reviewed for the <strong>${esc(customerContext.name)}</strong> deployment of the <strong>${esc(m.name)}</strong> module.</p>`);
   }
 
   // Visual flow diagram — segments as steps
@@ -739,12 +777,16 @@ function buildWorkflow(data) {
   return parts.join('');
 }
 
-function buildRules(data) {
+function buildRules(data, customerContext = {}) {
   const { rules } = data;
   const parts = [];
 
   if (rules.length === 0) {
     return emptyState('No Rules Found', 'No module rules were found in this module export.');
+  }
+
+  if (customerContext.name) {
+    parts.push(`<p style="color:#64748B;font-size:9pt;margin-bottom:20px;">Business rules and automated behaviors configured for the <strong>${esc(customerContext.name)}</strong> implementation of the <strong>${esc(data.metadata.name)}</strong> module.</p>`);
   }
 
   // Group rules by type
@@ -801,12 +843,16 @@ function buildRules(data) {
   return parts.join('');
 }
 
-function buildLayout(data) {
+function buildLayout(data, customerContext = {}) {
   const { regions, fields } = data;
   const parts = [];
 
   if (regions.length === 0 && fields.every(f => !f.region)) {
     return emptyState('No Layout Data Found', 'No region or layout definitions were found in this module export.');
+  }
+
+  if (customerContext.name) {
+    parts.push(`<p style="color:#64748B;font-size:9pt;margin-bottom:20px;">Screen layout and field placement as configured for <strong>${esc(customerContext.name)}</strong>'s <strong>${esc(data.metadata.name)}</strong> module.</p>`);
   }
 
   // Region summary
@@ -856,12 +902,16 @@ function buildLayout(data) {
   return parts.join('');
 }
 
-function buildSecurity(data) {
+function buildSecurity(data, customerContext = {}) {
   const { roles, rules } = data;
   const parts = [];
 
   if (roles.length === 0) {
     return emptyState('No Role Definitions Found', 'No role or security configurations were found in this module export.');
+  }
+
+  if (customerContext.name) {
+    parts.push(`<p style="color:#64748B;font-size:9pt;margin-bottom:20px;">Role definitions and access control model for the <strong>${esc(customerContext.name)}</strong> deployment of the <strong>${esc(data.metadata.name)}</strong> module.</p>`);
   }
 
   parts.push(section('Module Roles', `${roles.length} roles defined`, `
@@ -974,6 +1024,12 @@ body { font-family: -apple-system,'Segoe UI',system-ui,sans-serif; font-size: 10
 .meta-chip .meta-value { font-size: 11pt; font-weight: 700; }
 .cover-date { font-size: 8.5pt; opacity: 0.5; }
 
+/* ─ Cover customer ─ */
+.cover-customer { margin-bottom: 20px; }
+.cover-customer-label { font-size: 7pt; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.5; margin-bottom: 4px; }
+.cover-customer-name { font-size: 20pt; font-weight: 800; line-height: 1.1; }
+.cover-customer-industry { font-size: 9pt; opacity: 0.65; margin-top: 3px; font-weight: 600; }
+
 /* ─ Page break ─ */
 .pb { page-break-after: always; }
 
@@ -988,6 +1044,7 @@ body { font-family: -apple-system,'Segoe UI',system-ui,sans-serif; font-size: 10
   background: #1B3A6B; color: white; padding: 6px 16px; border-radius: 6px;
   font-size: 14pt; font-weight: 800; letter-spacing: 0.05em;
 }
+.ph-customer { font-size: 8pt; color: #64748B; margin-top: 3px; }
 
 /* ─ Sections ─ */
 .section { margin-bottom: 28px; }
@@ -1112,6 +1169,14 @@ tr:nth-child(even) td { background: #F8FAFF; }
 .desc-role-name { background: linear-gradient(135deg, #1B3A6B, #2D5AA0); color: white; padding: 12px 16px; font-weight: 800; font-size: 10pt; min-width: 160px; display: flex; align-items: center; }
 .desc-role-body { padding: 12px 16px; font-size: 9.5pt; line-height: 1.6; color: #1A202C; flex: 1; }
 
+/* ─ Customer context box ─ */
+.customer-context-box { background: linear-gradient(135deg, #EBF3FD, #F8FAFF); border: 1px solid #D1E0F7; border-left: 5px solid #1B3A6B; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px; }
+.ccb-label { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #64748B; margin-bottom: 6px; }
+.ccb-name { font-size: 16pt; font-weight: 800; color: #1B3A6B; }
+.ccb-industry { font-size: 9pt; color: #0073E6; font-weight: 600; margin-top: 2px; }
+.ccb-desc { font-size: 9pt; color: #475569; margin-top: 8px; line-height: 1.6; }
+.ccb-module-context { font-size: 9pt; color: #1A202C; margin-top: 10px; line-height: 1.65; padding-top: 10px; border-top: 1px solid #D1E0F7; font-style: italic; }
+
 /* ─ Test Scripts ─ */
 .ts-intro { background: linear-gradient(135deg, #EBF3FD, #F8FAFF); border: 1px solid #D1E0F7; border-left: 5px solid #0073E6; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-bottom: 24px; }
 .ts-intro-title { font-size: 11pt; font-weight: 800; color: #1B3A6B; margin-bottom: 8px; }
@@ -1172,7 +1237,7 @@ tr:nth-child(even) td { background: #F8FAFF; }
 
 // ─── Test Scripts ─────────────────────────────────────────────────────────────
 
-function buildTestScripts(data) {
+function buildTestScripts(data, customerContext = {}) {
   const { metadata: m, fields, workflow, roles, rules } = data;
   const parts = [];
   let tcNum = 1;
@@ -1185,8 +1250,8 @@ function buildTestScripts(data) {
 <div class="ts-intro">
   <div class="ts-intro-title">How to Use This Test Script</div>
   <div class="ts-intro-body">
-    <p>This document provides structured User Acceptance Testing (UAT) scenarios for the <strong>${esc(m.name)}</strong> module.
-    Each test case follows a standard format: objective, prerequisites, step-by-step actions, expected results, and capture fields for actual results and pass/fail status.</p>
+    <p>This document provides structured User Acceptance Testing (UAT) scenarios for the <strong>${esc(m.name)}</strong> module${customerContext.name ? ` as deployed at <strong>${esc(customerContext.name)}</strong>` : ''}.
+    Each test case follows a standard format: objective, prerequisites, step-by-step actions, expected results, and capture fields for actual results and pass/fail status.${customerContext.moduleContext ? ' ' + esc(customerContext.moduleContext) : ''}</p>
     <div class="ts-legend">
       <div class="ts-legend-item"><span class="ts-status ts-pass">PASS</span> Test completed successfully</div>
       <div class="ts-legend-item"><span class="ts-status ts-fail">FAIL</span> Actual result did not match expected</div>
@@ -1211,7 +1276,7 @@ function buildTestScripts(data) {
     <div class="ts-tester-block">
       <div class="ts-tester-row"><span class="ts-tester-label">Tester Name:</span><span class="ts-tester-line"></span></div>
       <div class="ts-tester-row"><span class="ts-tester-label">Test Date:</span><span class="ts-tester-line"></span></div>
-      <div class="ts-tester-row"><span class="ts-tester-label">Environment:</span><span class="ts-tester-line"></span></div>
+      <div class="ts-tester-row"><span class="ts-tester-label">Customer / Environment:</span><span class="ts-tester-line" style="flex:0 0 20px"></span><span style="font-size:8pt;color:#1B3A6B;font-weight:600;">${customerContext.name ? esc(customerContext.name) : ''}</span></div>
       <div class="ts-tester-row"><span class="ts-tester-label">Module Version:</span><span class="ts-tester-line"></span></div>
     </div>`));
 
