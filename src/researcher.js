@@ -43,17 +43,46 @@ Use web search to research the company, then return a JSON object with exactly t
 Return ONLY a valid JSON object. No markdown code fences, no explanation, no commentary before or after. Just the raw JSON.`;
 
   try {
-    const response = await c.messages.create({
+    const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }];
+    const messages = [{ role: 'user', content: prompt }];
+
+    let response = await c.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
-      messages: [{ role: 'user', content: prompt }],
+      tools,
+      messages,
     });
 
-    // Find the final text block (after any tool use turns)
+    // Agentic loop: keep going until stop_reason is 'end_turn' or no more tool use
+    while (response.stop_reason === 'tool_use') {
+      console.log('[researcher] Tool use in progress, continuing...');
+
+      // Append assistant turn
+      messages.push({ role: 'assistant', content: response.content });
+
+      // Build tool results for all tool_use blocks
+      const toolResults = response.content
+        .filter(b => b.type === 'tool_use')
+        .map(b => ({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          content: b.type === 'tool_use' ? (b.content || '') : '',
+        }));
+
+      messages.push({ role: 'user', content: toolResults });
+
+      response = await c.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        tools,
+        messages,
+      });
+    }
+
+    // Find the final text block
     const textBlocks = response.content.filter(b => b.type === 'text');
     if (textBlocks.length === 0) {
-      console.warn('[researcher] No text block in response — using name-only context');
+      console.warn('[researcher] No text block in final response — using name-only context');
       return { name: customerName, scraped: false };
     }
 
